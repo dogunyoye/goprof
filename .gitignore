@@ -1,0 +1,21 @@
+# Binaries
+/goprof
+/bin/
+/dist/
+
+# Profiles (sample output, don't commit large captures)
+profiles/*.pb.gz
+profiles/*.prof
+profiles/*.out
+!profiles/.gitkeep
+
+# Go
+*.test
+*.exe
+/vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
