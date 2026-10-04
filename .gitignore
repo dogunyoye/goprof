@@ -7,6 +7,8 @@
 profiles/*.pb.gz
 profiles/*.prof
 profiles/*.out
+profiles/*.svg
+profiles/*.folded
 !profiles/.gitkeep
 
 # Go

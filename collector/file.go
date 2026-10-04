@@ -15,7 +15,8 @@ type ProfileInfo struct {
 }
 
 // List returns profile-like files in dir sorted by name.
-// Matches *.pb.gz, *.prof, *.out, *.pprof for convenience.
+// Matches *.pb.gz, *.prof, *.out, *.pprof plus generated
+// flamegraph outputs (*.svg, *.folded) for convenience.
 func List(dir string) ([]ProfileInfo, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -31,8 +32,10 @@ func List(dir string) ([]ProfileInfo, error) {
 		}
 		name := e.Name()
 		ext := filepath.Ext(name)
-		// Accept .pb.gz double extension plus common pprof suffixes.
-		matched := ext == ".gz" || ext == ".prof" || ext == ".out" || ext == ".pprof"
+		// Accept .pb.gz double extension plus common pprof suffixes,
+		// plus flamegraph outputs.
+		matched := ext == ".gz" || ext == ".prof" || ext == ".out" ||
+			ext == ".pprof" || ext == ".svg" || ext == ".folded"
 		if !matched {
 			continue
 		}

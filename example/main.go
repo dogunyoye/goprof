@@ -9,6 +9,9 @@
 //	go tool pprof profiles/cpu.pb.gz
 //	go tool pprof profiles/mem.pb.gz
 //
+// Flamegraphs are generated automatically on shutdown:
+// profiles/flame-cpu.svg, profiles/flame-mem.svg (open in a browser).
+//
 // Or expose pprof over HTTP by setting ServerAddr and:
 //
 //	go run ./cmd/goprof collect --addr localhost:6060 --type heap --output profiles/remote-heap.pb.gz
@@ -20,6 +23,7 @@ import (
 	"math/rand"
 	"time"
 
+	"goprof/flamegraph"
 	"goprof/profiler"
 )
 
@@ -37,6 +41,16 @@ func main() {
 			log.Fatal(err)
 		}
 		fmt.Println("profiles written to ./profiles — view with: go tool pprof profiles/cpu.pb.gz")
+		for _, fc := range []struct{ in, out string }{
+			{"profiles/cpu.pb.gz", "profiles/flame-cpu.svg"},
+			{"profiles/mem.pb.gz", "profiles/flame-mem.svg"},
+		} {
+			if s, err := flamegraph.Generate(fc.in, fc.out, flamegraph.DefaultOptions()); err != nil {
+				log.Printf("flamegraph %s: %v", fc.in, err)
+			} else {
+				fmt.Printf("flamegraph: %s (%d stacks, %d frames) — open in a browser\n", s.SVG, s.Stacks, s.Frames)
+			}
+		}
 	}()
 
 	fmt.Println("profiling for ~12s (pprof at http://localhost:6060/debug/pprof/)...")
