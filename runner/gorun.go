@@ -12,7 +12,7 @@ import (
 //
 //   - "./main.go [args...]" (any leading run of .go files) runs via
 //     the Go toolchain: `go run [goFlags] files... args...`.
-//   - A local directory holding .go files (e.g. "./example") runs via
+//   - A local directory holding .go files (e.g. "./examples/starter") runs via
 //     `go run [goFlags] <pkg> args...`.
 //   - Anything else (executables, PATH binaries) runs directly.
 //

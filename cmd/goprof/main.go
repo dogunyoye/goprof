@@ -68,7 +68,7 @@ Commands:
 Examples:
   goprof run --seconds 30 -- ./myapp --serve
   goprof run --seconds 10 -- ./main.go --serve
-  goprof run --pprof-addr localhost:6060 -- go run ./example
+  goprof run --pprof-addr localhost:6060 -- go run ./examples/starter
   goprof attach --pid 1234 --seconds 30
   goprof collect --addr http://localhost:6060 --type heap --output profiles/heap.pb.gz
   goprof flame --input profiles/cpu.pb.gz --output profiles/flame.svg

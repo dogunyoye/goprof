@@ -1,8 +1,11 @@
-// Example app instrumented with goprof.
+// Starter example: the instrument-your-own-app template.
+//
+// It burns CPU, churns the heap, serves pprof on :6060, and writes
+// profiles + flamegraphs on shutdown.
 //
 // Run:
 //
-//	go run ./example
+//	go run ./examples/starter
 //
 // Then in another terminal:
 //

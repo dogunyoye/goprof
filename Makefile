@@ -1,4 +1,4 @@
-.PHONY: vet test example examples cli build flame clean ps run run-pprof
+.PHONY: vet test starter examples cli build flame clean ps run run-pprof
 
 vet:
 	go vet ./...
@@ -9,8 +9,8 @@ test:
 build:
 	go build -o /tmp/goprof ./cmd/goprof
 
-example:
-	go run ./example
+starter:
+	go run ./examples/starter
 
 # Convert the latest example output to flamegraphs.
 flame:
@@ -23,11 +23,11 @@ ps:
 
 # Launch + profile in one command: external mode (needs perf).
 run:
-	go run ./cmd/goprof run --seconds 12 -- go run ./example
+	go run ./cmd/goprof run --seconds 12 -- go run ./examples/starter
 
-# Launch + profile in one command: endpoint mode via the example's :6060.
+# Launch + profile in one command: endpoint mode via the starter's :6060.
 run-pprof:
-	go run ./cmd/goprof run --pprof-addr localhost:6060 --no-cpu -- go run ./example
+	go run ./cmd/goprof run --pprof-addr localhost:6060 --no-cpu -- go run ./examples/starter
 
 # Build all example apps (smoke check).
 examples:

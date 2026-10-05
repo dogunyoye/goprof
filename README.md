@@ -22,9 +22,9 @@ goprof/
     gorun.go      .go files / package dirs via `go run`, build flags
     pprof.go      optional endpoint fetch + render
   cmd/goprof/     CLI: run + attach + ps + collect + list + flame
-  example/        original single demo (used by tests)
-  examples/       five profile-shape demos, see examples/README.md
-    cpu-bound, alloc-heavy, http-server, goroutine-leak, mutex-contention
+  examples/       profile-shape demos, see examples/README.md
+    starter (instrumentation template), cpu-bound, alloc-heavy,
+    http-server, goroutine-leak, mutex-contention
   profiles/       output dir (gitignored except .gitkeep)
 ```
 
@@ -35,16 +35,16 @@ cd goprof
 go vet ./...
 go test ./...
 
-# 1. Run instrumented example (~12s, writes profiles/cpu.pb.gz + mem.pb.gz
+# 1. Run the starter example (~12s, writes profiles/cpu.pb.gz + mem.pb.gz
 #    plus flame-cpu.svg + flame-mem.svg automatically)
-go run ./example
+go run ./examples/starter
 
 # 2. Inspect
 go tool pprof profiles/cpu.pb.gz
 go tool pprof profiles/mem.pb.gz
 # or open profiles/flame-cpu.svg in a browser (search + click-to-zoom)
 
-# 3. While example runs (it serves :6060), pull remotely:
+# 3. While starter runs (it serves :6060), pull remotely:
 go run ./cmd/goprof collect --addr localhost:6060 --type heap --output profiles/remote-heap.pb.gz
 go run ./cmd/goprof collect --addr localhost:6060 --type cpu --seconds 10 --output profiles/remote-cpu.pb.gz
 go run ./cmd/goprof list --dir profiles
@@ -54,9 +54,9 @@ go run ./cmd/goprof flame --input profiles/cpu.pb.gz --output profiles/flame.svg
 go run ./cmd/goprof flame --input profiles/mem.pb.gz --output profiles/flame-mem.svg --folded profiles/mem.folded
 
 # 5. Or launch + profile in one command (external mode needs perf):
-go run ./cmd/goprof run --seconds 12 -- go run ./example
-# ...or fetch the example's :6060 endpoint while it runs (no perf needed):
-go run ./cmd/goprof run --pprof-addr localhost:6060 --no-cpu -- go run ./example
+go run ./cmd/goprof run --seconds 12 -- go run ./examples/starter
+# ...or fetch the starter's :6060 endpoint while it runs (no perf needed):
+go run ./cmd/goprof run --pprof-addr localhost:6060 --no-cpu -- go run ./examples/starter
 ```
 
 ## Library use
@@ -203,7 +203,7 @@ goprof run --seconds 30 -- ./myapp --serve
 
 # endpoint mode: also fetch the app's pprof endpoint (no perf needed)
 goprof run --pprof-addr localhost:6060 -- ./myapp --serve
-goprof run --pprof-addr localhost:6060 --pprof-seconds 10 --no-cpu -- go run ./example
+goprof run --pprof-addr localhost:6060 --pprof-seconds 10 --no-cpu -- go run ./examples/starter
 
 # Go source targets run via `go run` (no need to build first)
 goprof run --seconds 30 -- ./main.go --serve

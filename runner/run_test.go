@@ -226,7 +226,7 @@ func TestRunPprofModeAgainstExample(t *testing.T) {
 	if !portFree("localhost:6060") {
 		t.Skip("port 6060 busy")
 	}
-	o := DefaultOptions([]string{"go", "run", "./example"})
+	o := DefaultOptions([]string{"go", "run", "./examples/starter"})
 	o.CPU = false
 	o.Mem = true
 	o.MemInterval = 500 * time.Millisecond
