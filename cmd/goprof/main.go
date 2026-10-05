@@ -1,12 +1,12 @@
-// Command goprof collects pprof profiles from a running Go app
-// and converts saved profiles to flamegraphs.
+// Command goprof profiles Go applications: instrumented (collect),
+// offline (flame), or by attaching to a running process (attach/ps).
 //
 // Usage:
 //
 //	goprof collect --addr http://localhost:6060 --type heap --output profiles/heap.pb.gz
-//	goprof collect --addr http://localhost:6060 --type cpu --seconds 30 --output profiles/cpu.pb.gz
-//	goprof list --dir profiles
 //	goprof flame --input profiles/cpu.pb.gz --output profiles/flame.svg
+//	goprof ps --go-only
+//	goprof attach --pid 1234 --seconds 30
 package main
 
 import (
@@ -14,12 +14,14 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
+	"goprof/attach"
 	"goprof/collector"
 	"goprof/flamegraph"
 )
 
-const version = "v0.2.0"
+const version = "v0.3.0"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -33,6 +35,10 @@ func main() {
 		runList(os.Args[2:])
 	case "flame":
 		runFlame(os.Args[2:])
+	case "ps":
+		runPs(os.Args[2:])
+	case "attach":
+		runAttach(os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Println("goprof", version)
 	default:
@@ -43,20 +49,22 @@ func main() {
 }
 
 func usage() {
-	fmt.Println(`goprof - tiny profiler client for Go pprof endpoints
+	fmt.Println(`goprof - profiler for Go applications
 
 Commands:
-  collect   fetch a profile from /debug/pprof
+  collect   fetch a profile from /debug/pprof (instrumented apps)
   list      list local profile files
   flame     convert a saved profile to a flamegraph SVG (+ optional folded)
+  ps        list processes (find attach targets)
+  attach    profile a running process without instrumentation (Linux perf + RSS)
   version   print version
 
 Examples:
   goprof collect --addr http://localhost:6060 --type heap --output profiles/heap.pb.gz
-  goprof collect --addr http://localhost:6060 --type cpu --seconds 30 --output profiles/cpu.pb.gz
-  goprof list --dir profiles
   goprof flame --input profiles/cpu.pb.gz --output profiles/flame.svg
-  goprof flame --input profiles/cpu.pb.gz --output profiles/flame.svg --folded profiles/flame.folded`)
+  goprof ps --go-only
+  goprof attach --pid 1234 --seconds 30
+  goprof attach --name myservice --seconds 30 --no-cpu`)
 }
 
 func runCollect(args []string) {
@@ -143,6 +151,7 @@ func runFlame(args []string) {
 	maxDepth := fs.Int("max-depth", 0, "truncate stacks deeper than this (0 = unlimited)")
 	sampleIndex := fs.Int("sample-index", -1, "profile value index to render (-1 = auto: cpu time / alloc_space)")
 	listSamples := fs.Bool("list-samples", false, "print the profile's sample types and exit")
+	format := fs.String("format", "auto", "input format: auto (by extension), pprof, or folded")
 	_ = fs.Parse(args)
 
 	if *listSamples {
@@ -176,7 +185,29 @@ func runFlame(args []string) {
 	opts.SampleIndex = *sampleIndex
 	opts.FoldedOutput = *folded
 
-	s, err := flamegraph.Generate(*input, *output, opts)
+	isFolded := strings.ToLower(strings.TrimSpace(*format))
+	switch isFolded {
+	case "folded":
+		isFolded = "folded"
+	case "pprof":
+		isFolded = "pprof"
+	default: // auto: folded by extension
+		isFolded = "pprof"
+		lower := strings.ToLower(*input)
+		if strings.HasSuffix(lower, ".folded") || strings.HasSuffix(lower, ".fold") {
+			isFolded = "folded"
+		}
+	}
+
+	var (
+		s   flamegraph.Summary
+		err error
+	)
+	if isFolded == "folded" {
+		s, err = flamegraph.GenerateFromFolded(*input, *output, opts)
+	} else {
+		s, err = flamegraph.Generate(*input, *output, opts)
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "flame:", err)
 		os.Exit(1)
@@ -187,4 +218,88 @@ func runFlame(args []string) {
 		fmt.Println("folded:    ", s.Folded)
 	}
 	fmt.Println("open the .svg in a browser (click a frame to zoom, search to highlight)")
+}
+
+func runPs(args []string) {
+	fs := flag.NewFlagSet("ps", flag.ExitOnError)
+	goOnly := fs.Bool("go-only", false, "show only processes that look like Go binaries")
+	_ = fs.Parse(args)
+
+	procs, err := attach.ListProcesses(*goOnly)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ps:", err)
+		os.Exit(1)
+	}
+	fmt.Printf("%-8s %-3s  %s\n", "PID", "GO", "COMMAND")
+	for _, p := range procs {
+		goTag := "-"
+		if p.IsGo {
+			goTag = "go"
+		}
+		fmt.Printf("%-8d %-3s  %s\n", p.PID, goTag, p.Display())
+	}
+}
+
+func runAttach(args []string) {
+	fs := flag.NewFlagSet("attach", flag.ExitOnError)
+	pid := fs.Int("pid", 0, "target process id")
+	name := fs.String("name", "", "substring matching comm/exe/cmdline (exactly one match required)")
+	seconds := fs.Int("seconds", 30, "sampling window in seconds")
+	freq := fs.Int("freq", 99, "perf samples per second")
+	callgraph := fs.String("callgraph", "dwarf", "perf unwinding: dwarf (reliable for Go) or fp")
+	outputDir := fs.String("output-dir", "profiles", "directory for the run artifacts")
+	prefix := fs.String("prefix", "", "artifact directory name (default attach-<exe>-<pid>-<timestamp>)")
+	noCPU := fs.Bool("no-cpu", false, "disable perf CPU sampling")
+	noMem := fs.Bool("no-mem", false, "disable RSS memory sampling")
+	memInterval := fs.Duration("mem-interval", 500*time.Millisecond, "RSS poll period")
+	includeKernel := fs.Bool("include-kernel", false, "keep kernel frames in the flamegraph")
+	title := fs.String("title", "", "SVG title (default: attach <exe> (pid N) — cpu)")
+	width := fs.Int("width", 1200, "SVG canvas width in px")
+	_ = fs.Parse(args)
+
+	opts := attach.DefaultOptions()
+	opts.PID = *pid
+	opts.Name = *name
+	opts.Seconds = *seconds
+	opts.Freq = *freq
+	opts.Callgraph = *callgraph
+	opts.OutputDir = *outputDir
+	opts.Prefix = *prefix
+	opts.CPU = !*noCPU
+	opts.Mem = !*noMem
+	opts.MemInterval = *memInterval
+	opts.IncludeKernel = *includeKernel
+	opts.Title = *title
+	fopts := flamegraph.DefaultOptions()
+	fopts.Width = *width
+	opts.FlameOpts = fopts
+
+	fmt.Printf("attaching to %s for %ds (cpu=%v mem=%v)...\n",
+		targetDesc(*pid, *name), opts.Seconds, opts.CPU, opts.Mem)
+	s, err := attach.Attach(opts)
+	for _, w := range s.Warnings {
+		fmt.Fprintln(os.Stderr, "warning:", w)
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	fmt.Printf("target: pid %d %s\n", s.Proc.PID, s.Proc.Display())
+	if s.SVG != "" {
+		fmt.Printf("flamegraph: %s (%d samples, %d stacks, %d frames)\n",
+			s.SVG, s.Samples, s.Stacks, s.Frames)
+		fmt.Printf("folded:     %s\nperf data:  %s (use `perf report -i` for details)\n",
+			s.Folded, s.PerfData)
+	}
+	if s.HaveMem {
+		fmt.Printf("memory:     %s (min %d KB, max %d KB, avg %d KB, growth %+d KB over %.1fs)\n",
+			s.Mem.CSV, s.Mem.MinKB, s.Mem.MaxKB, s.Mem.AvgKB, s.Mem.GrowthKB, s.Mem.ElapsedSecs)
+	}
+}
+
+func targetDesc(pid int, name string) string {
+	if pid > 0 {
+		return fmt.Sprintf("pid %d", pid)
+	}
+	return fmt.Sprintf("process matching %q", name)
 }

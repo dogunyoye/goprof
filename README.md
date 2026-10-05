@@ -1,26 +1,23 @@
-# goprof — tiny profiler for Go apps (v0.2)
+# goprof — profiler for Go apps (v0.3)
 
-CPU + heap sampling built on `runtime/pprof`, plus a small CLI to pull
-profiles from a live `net/http/pprof` endpoint and render flamegraphs.
-Only external dep: `github.com/google/pprof` (profile parsing).
+CPU + heap sampling for instrumented apps (`runtime/pprof`), flamegraph
+rendering, and zero-instrumentation attach profiling of running
+processes on Linux (perf CPU + RSS memory). New dep:
+`github.com/google/pprof` (profile parsing).
 
 ## Layout
 
 ```
 goprof/
   profiler/        library: Start/Stop, CaptureCPU, SnapshotHeap, pprof server
-    config.go     Config + validation
-    profiler.go   Profiler (CPU file + heap dump)
-    http.go       StartPprofServer helper
   collector/       file listing + remote fetch (/debug/pprof)
-    remote.go     FetchRemote(addr, type, seconds, output)
-    file.go       List(dir) — profiles + flamegraph outputs
-  flamegraph/      pprof -> folded stacks -> self-contained SVG
-    flamegraph.go Generate(input, output, opts) + Summary
-    stacks.go     ParseStacks, DefaultSampleIndex, SampleTypes
-    folded.go     WriteFolded (flamegraph.pl / Speedscope compatible)
-    svg.go        RenderSVG (search, tooltips, click-to-zoom)
-  cmd/goprof/     CLI: collect + list + flame
+  flamegraph/      pprof/folded -> folded stacks -> self-contained SVG
+  attach/          external profiling without instrumentation (Linux)
+    process.go    /proc discovery + Go binary detection (debug/buildinfo)
+    perf.go       perf record + perf script -> folded stacks
+    mem.go        RSS polling -> CSV + stats
+    attach.go     Attach(opts): CPU flamegraph + memory series together
+  cmd/goprof/     CLI: collect + list + flame + ps + attach
   example/        demo app that burns CPU and churns heap
   profiles/       output dir (gitignored except .gitkeep)
 ```
@@ -89,6 +86,8 @@ go tool pprof http://localhost:6060/debug/pprof/heap
 go build -o /tmp/goprof ./cmd/goprof
 /tmp/goprof collect --help
 /tmp/goprof list --dir profiles
+/tmp/goprof ps --go-only
+/tmp/goprof attach --pid 1234 --seconds 30
 ```
 
 Types: `cpu | heap | goroutine | block | mutex | trace`.
@@ -130,7 +129,51 @@ s, err := flamegraph.Generate("profiles/cpu.pb.gz", "profiles/flame.svg",
 // s.Stacks, s.Frames, s.Total, s.Unit, s.SampleType
 ```
 
-## Next steps (v0.3 ideas)
+Folded stacks render directly too (`--format` defaults to auto by
+extension):
+
+```bash
+goprof flame --input stacks.folded --output flame.svg
+```
+
+## Attach: profile a running process (Linux, no instrumentation)
+
+`attach` samples an already-running process: CPU with `perf record`
+(DWARF unwinding, reliable for Go) collapsed to folded stacks and
+rendered as a flamegraph, plus resident memory polled from `/proc`
+into `rss.csv`. No code changes, no restart, no pprof endpoint.
+
+Requirements: Linux, the `perf` binary (`apt install linux-tools-generic`),
+and permission to trace the target (same UID or root;
+`kernel.perf_event_paranoid` ≤ 2 for user-space sampling).
+
+```bash
+# find candidates (Go binaries flagged via build info)
+goprof ps --go-only
+
+# attach for 30s: CPU flamegraph + memory series under profiles/attach-<exe>-<pid>-<ts>/
+goprof attach --pid 1234 --seconds 30
+goprof attach --name myservice --seconds 30
+
+# memory only (works without perf), or custom sampling
+goprof attach --pid 1234 --seconds 60 --no-cpu --mem-interval 200ms
+goprof attach --pid 1234 --seconds 30 --freq 199 --callgraph fp --include-kernel
+```
+
+Artifacts per run: `perf.data` (raw, for `perf report -i`),
+`cpu.folded`, `flame.svg`, `rss.csv`. Memory-only runs skip perf
+entirely; non-Go targets get a warning but still profile.
+
+Library use:
+
+```go
+import "goprof/attach"
+
+s, err := attach.Attach(attach.Options{PID: 1234, Seconds: 30})
+// s.SVG, s.Folded, s.PerfData, s.Mem (Min/Max/Avg/Growth), s.Warnings
+```
+
+## Next steps (v0.4 ideas)
 
 - Goroutine / block / mutex capture in `Profiler`
 - `trace` support (`runtime/trace`)

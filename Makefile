@@ -17,5 +17,10 @@ flame:
 	go run ./cmd/goprof flame --input profiles/cpu.pb.gz --output profiles/flame-cpu.svg --folded profiles/flame.folded
 	go run ./cmd/goprof flame --input profiles/mem.pb.gz --output profiles/flame-mem.svg
 
+# List processes (attach candidates) and show attach help.
+ps:
+	go run ./cmd/goprof ps --go-only
+
 clean:
-	rm -f profiles/*.pb.gz profiles/*.prof profiles/*.out profiles/*.svg profiles/*.folded
+	rm -f profiles/*.pb.gz profiles/*.prof profiles/*.out profiles/*.svg profiles/*.folded profiles/*.csv profiles/*.data
+	rm -rf profiles/attach-* profiles/verify-*

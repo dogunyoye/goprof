@@ -57,13 +57,32 @@ func Generate(inputPath, outputPath string, opts Options) (Summary, error) {
 	if inputPath == "" {
 		return s, fmt.Errorf("flamegraph: input path required")
 	}
-	if outputPath == "" {
-		return s, fmt.Errorf("flamegraph: output path required")
-	}
-
 	data, err := ParseStacks(inputPath, opts.SampleIndex)
 	if err != nil {
 		return s, err
+	}
+	return renderData(inputPath, data, outputPath, opts)
+}
+
+// GenerateFromFolded converts folded stacks (`a;b;c value` lines, as
+// produced by WriteFolded, stackcollapse scripts, or the attach sampler)
+// into a self-contained flamegraph SVG.
+func GenerateFromFolded(foldedPath, outputPath string, opts Options) (Summary, error) {
+	var s Summary
+	if foldedPath == "" {
+		return s, fmt.Errorf("flamegraph: folded path required")
+	}
+	data, err := ParseFolded(foldedPath)
+	if err != nil {
+		return s, err
+	}
+	return renderData(foldedPath, data, outputPath, opts)
+}
+
+func renderData(inputPath string, data *ProfileData, outputPath string, opts Options) (Summary, error) {
+	var s Summary
+	if outputPath == "" {
+		return s, fmt.Errorf("flamegraph: output path required")
 	}
 
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {

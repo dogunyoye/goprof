@@ -185,3 +185,72 @@ func TestRenderSVGPrunesNarrowFrames(t *testing.T) {
 		t.Fatal("expected some frames")
 	}
 }
+
+func TestParseFolded(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/in.folded"
+	content := "# comment\n\nmain;work;burn 10\nmain;work 5\nmain;work;burn 3\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	data, err := ParseFolded(path)
+	if err != nil {
+		t.Fatalf("ParseFolded: %v", err)
+	}
+	if len(data.Stacks) != 2 || data.Total != 18 {
+		t.Fatalf("got %d stacks total %d: %+v", len(data.Stacks), data.Total, data.Stacks)
+	}
+	if data.Unit != "samples" || data.SampleType != "collapsed" {
+		t.Fatalf("unexpected meta: %+v", data)
+	}
+	// Duplicates aggregated.
+	for _, s := range data.Stacks {
+		if len(s.Funcs) == 3 && s.Value != 13 {
+			t.Fatalf("expected aggregated 13, got %+v", s)
+		}
+	}
+}
+
+func TestParseFoldedErrors(t *testing.T) {
+	dir := t.TempDir()
+	for name, content := range map[string]string{
+		"empty.folded":    "",
+		"comments.folded": "# only comments\n\n",
+		"bad.folded":      "main;work\n",
+		"novalue.folded":  "main;work abc\n",
+		"zero.folded":     "main;work 0\n",
+	} {
+		p := dir + "/" + name
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ParseFolded(p); err == nil {
+			t.Fatalf("expected error for %s", name)
+		}
+	}
+	if _, err := ParseFolded(dir + "/missing.folded"); err == nil {
+		t.Fatal("expected error for missing file")
+	}
+}
+
+func TestGenerateFromFolded(t *testing.T) {
+	dir := t.TempDir()
+	in := dir + "/in.folded"
+	if err := os.WriteFile(in, []byte("a;b;c 7\na;b 3\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := GenerateFromFolded(in, dir+"/out.svg", DefaultOptions())
+	if err != nil {
+		t.Fatalf("GenerateFromFolded: %v", err)
+	}
+	if s.Stacks != 2 || s.Frames == 0 || s.Total != 10 {
+		t.Fatalf("unexpected summary: %+v", s)
+	}
+	b, err := os.ReadFile(dir + "/out.svg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "<svg") {
+		t.Fatal("expected svg output")
+	}
+}

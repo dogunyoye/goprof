@@ -9,6 +9,9 @@ profiles/*.prof
 profiles/*.out
 profiles/*.svg
 profiles/*.folded
+profiles/*.csv
+profiles/*.data
+profiles/attach-*/
 !profiles/.gitkeep
 
 # Go
