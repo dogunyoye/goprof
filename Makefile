@@ -1,4 +1,4 @@
-.PHONY: vet test example cli build flame clean ps run run-pprof
+.PHONY: vet test example examples cli build flame clean ps run run-pprof
 
 vet:
 	go vet ./...
@@ -28,6 +28,10 @@ run:
 # Launch + profile in one command: endpoint mode via the example's :6060.
 run-pprof:
 	go run ./cmd/goprof run --pprof-addr localhost:6060 --no-cpu -- go run ./example
+
+# Build all example apps (smoke check).
+examples:
+	go build ./examples/...
 
 clean:
 	rm -f profiles/*.pb.gz profiles/*.prof profiles/*.out profiles/*.svg profiles/*.folded profiles/*.csv profiles/*.data

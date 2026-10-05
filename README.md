@@ -1,4 +1,4 @@
-# goprof — profiler for Go apps (v0.6)
+# goprof — profiler for Go apps (v0.7)
 
 CPU + heap sampling for instrumented apps (`runtime/pprof`), flamegraph
 rendering, zero-instrumentation attach profiling of running processes,
@@ -22,7 +22,9 @@ goprof/
     gorun.go      .go files / package dirs via `go run`, build flags
     pprof.go      optional endpoint fetch + render
   cmd/goprof/     CLI: run + attach + ps + collect + list + flame
-  example/        demo app that burns CPU and churns heap
+  example/        original single demo (used by tests)
+  examples/       five profile-shape demos, see examples/README.md
+    cpu-bound, alloc-heavy, http-server, goroutine-leak, mutex-contention
   profiles/       output dir (gitignored except .gitkeep)
 ```
 
