@@ -1,4 +1,4 @@
-# goprof — profiler for Go apps (v0.4)
+# goprof — profiler for Go apps (v0.5)
 
 CPU + heap sampling for instrumented apps (`runtime/pprof`), flamegraph
 rendering, zero-instrumentation attach profiling of running processes,
@@ -19,6 +19,7 @@ goprof/
     attach.go     Attach(opts): CPU flamegraph + memory series together
   runner/          launch + profile in one command (Linux)
     run.go        spawn, window/timeout/detach, signals, exit codes
+    gorun.go      .go files / package dirs via `go run`, build flags
     pprof.go      optional endpoint fetch + render
   cmd/goprof/     CLI: run + attach + ps + collect + list + flame
   example/        demo app that burns CPU and churns heap
@@ -195,6 +196,11 @@ goprof run --seconds 30 -- ./myapp --serve
 goprof run --pprof-addr localhost:6060 -- ./myapp --serve
 goprof run --pprof-addr localhost:6060 --pprof-seconds 10 --no-cpu -- go run ./example
 
+# Go source targets run via `go run` (no need to build first)
+goprof run --seconds 30 -- ./main.go --serve
+goprof run --seconds 30 -- ./cmd/server --serve
+goprof run --go-flag -race --seconds 30 -- ./main.go   # build flags supported
+
 # environment, working dir, kernel frames, leave servers running
 goprof run -e PORT=8080 -e GOMAXPROCS=4 --dir ./service -- ./myapp
 goprof run --seconds 30 --detach -- ./myapp --serve
@@ -223,7 +229,7 @@ s, err := runner.Run(runner.Options{
 // s.ExitCode, s.SVG, s.Mem, s.PprofHeap, s.Warnings, ...
 ```
 
-## Next steps (v0.5 ideas)
+## Next steps (v0.6 ideas)
 
 - Goroutine / block / mutex capture in `Profiler`
 - `trace` support (`runtime/trace`)

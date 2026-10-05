@@ -36,6 +36,9 @@ type Options struct {
 	Dir string
 	// Env adds KEY=VAL pairs to the child's environment.
 	Env []string
+	// GoFlags are build flags inserted into `go run` when the target
+	// is Go source (e.g. {"-race"} or {"-tags", "netgo"}).
+	GoFlags []string
 	// Seconds caps the sampling window (0 = until the child exits).
 	Seconds int
 	// Freq is perf samples/sec. Default 99.
@@ -99,6 +102,9 @@ type Summary struct {
 	PprofHeap    string
 	PprofCPUSVG  string
 	PprofHeapSVG string
+	// ViaGoRun reports that the target was Go source launched with
+	// `go run` rather than an executable run directly.
+	ViaGoRun bool
 }
 
 // DefaultOptions profiles both CPU and memory until the child exits.
@@ -165,14 +171,20 @@ func Run(opts Options) (Summary, error) {
 	defer stopSignals()
 
 	start := time.Now()
-	child := exec.Command(opts.Command[0], opts.Command[1:]...)
+	argv, viaGo, err := resolveCommand(opts.Command, opts.Dir, opts.GoFlags)
+	if err != nil {
+		return s, err
+	}
+	s.ViaGoRun = viaGo
+	child := exec.Command(argv[0], argv[1:]...)
 	child.Dir = opts.Dir
 	child.Env = append(os.Environ(), opts.Env...)
 	child.Stdout = stdout
 	child.Stderr = stderr
 	child.Stdin = os.Stdin
 	if err := child.Start(); err != nil {
-		return s, fmt.Errorf("runner: start %q: %w", opts.Command[0], err)
+		os.Remove(workDir) // don't leave an empty run dir behind
+		return s, fmt.Errorf("runner: start %q: %w%s", argv[0], err, startHint(opts.Command[0]))
 	}
 	s.PID = child.Process.Pid
 	childDone := make(chan error, 1)

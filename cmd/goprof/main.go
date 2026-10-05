@@ -24,7 +24,7 @@ import (
 	"goprof/runner"
 )
 
-const version = "v0.4.0"
+const version = "v0.5.0"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -67,6 +67,7 @@ Commands:
 
 Examples:
   goprof run --seconds 30 -- ./myapp --serve
+  goprof run --seconds 10 -- ./main.go --serve
   goprof run --pprof-addr localhost:6060 -- go run ./example
   goprof attach --pid 1234 --seconds 30
   goprof collect --addr http://localhost:6060 --type heap --output profiles/heap.pb.gz
@@ -311,11 +312,11 @@ func targetDesc(pid int, name string) string {
 	return fmt.Sprintf("process matching %q", name)
 }
 
-// envFlags collects repeatable -e/--env KEY=VAL flags.
-type envFlags []string
+// stringSlice collects repeatable KEY=VAL style flags.
+type stringSlice []string
 
-func (e *envFlags) String() string     { return strings.Join(*e, ",") }
-func (e *envFlags) Set(v string) error { *e = append(*e, v); return nil }
+func (e *stringSlice) String() string     { return strings.Join(*e, ",") }
+func (e *stringSlice) Set(v string) error { *e = append(*e, v); return nil }
 
 func runRun(args []string) {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
@@ -335,9 +336,11 @@ func runRun(args []string) {
 	title := fs.String("title", "", "SVG title override")
 	width := fs.Int("width", 1200, "SVG canvas width in px")
 	dir := fs.String("dir", "", "working directory for the app")
-	var envs envFlags
+	var envs stringSlice
 	fs.Var(&envs, "env", "extra child env (KEY=VAL, repeatable)")
 	fs.Var(&envs, "e", "shorthand for --env")
+	var goFlags stringSlice
+	fs.Var(&goFlags, "go-flag", "go build flag for .go/package targets, repeatable (e.g. --go-flag -race)")
 	_ = fs.Parse(args)
 
 	cmd := fs.Args()
@@ -363,12 +366,16 @@ func runRun(args []string) {
 	opts.Title = *title
 	opts.Dir = *dir
 	opts.Env = []string(envs)
+	opts.GoFlags = []string(goFlags)
 	fopts := flamegraph.DefaultOptions()
 	fopts.Width = *width
 	opts.FlameOpts = fopts
 
 	fmt.Printf("running profiling: %s\n", strings.Join(cmd, " "))
 	s, err := runner.Run(opts)
+	if s.ViaGoRun {
+		fmt.Println("(target is Go source, launched via `go run`)")
+	}
 	for _, w := range s.Warnings {
 		fmt.Fprintln(os.Stderr, "warning:", w)
 	}
