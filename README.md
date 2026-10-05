@@ -1,9 +1,10 @@
 # goprof — profiler for Go apps (v0.8)
 
 CPU + heap sampling for instrumented apps (`runtime/pprof`), flamegraph
-rendering, zero-instrumentation attach profiling of running processes,
-and one-shot `run` (launch the app under the profiler in a single
-command). New dep: `github.com/google/pprof` (profile parsing).
+rendering (SVG + HTML viewer), zero-instrumentation attach profiling of
+running processes, and one-shot `run` (launch the app under the profiler
+in a single command). Its only external dependency is
+`github.com/google/pprof` (profile parsing).
 
 ## Layout
 
@@ -11,10 +12,14 @@ command). New dep: `github.com/google/pprof` (profile parsing).
 goprof/
   profiler/        library: Start/Stop, CaptureCPU, SnapshotHeap, pprof server
   collector/       file listing + remote fetch (/debug/pprof)
-  flamegraph/      pprof/folded -> folded stacks -> self-contained SVG
+  flamegraph/      pprof/folded -> folded stacks -> SVG + HTML viewer
+    flamegraph.go Generate / GenerateFromFolded (+ folded/HTML sidecars)
+    svg.go        RenderSVG (search, tooltips, click-to-zoom)
+    html.go       RenderHTML (sticky toolbar + inline SVG)
   attach/          external profiling without instrumentation (Linux)
     process.go    /proc discovery + Go binary detection (debug/buildinfo)
     perf.go       perf record/session + perf script -> folded stacks
+    perfbin.go    perf binary auto-resolution (incl. broken WSL wrapper)
     mem.go        RSS polling -> streaming CSV + stats
     attach.go     Attach(opts): CPU flamegraph + memory series together
   runner/          launch + profile in one command (Linux)
@@ -53,10 +58,14 @@ go run ./cmd/goprof list --dir profiles
 go run ./cmd/goprof flame --input profiles/cpu.pb.gz --output profiles/flame.svg
 go run ./cmd/goprof flame --input profiles/mem.pb.gz --output profiles/flame-mem.svg --folded profiles/mem.folded
 
-# 5. Or launch + profile in one command (external mode needs perf):
-go run ./cmd/goprof run --seconds 12 -- go run ./examples/starter
+# 5. Or launch + profile in one command (external mode needs perf;
+#    Go sources run via `go run` automatically):
+go run ./cmd/goprof run --seconds 12 -- ./examples/starter
 # ...or fetch the starter's :6060 endpoint while it runs (no perf needed):
-go run ./cmd/goprof run --pprof-addr localhost:6060 --no-cpu -- go run ./examples/starter
+go run ./cmd/goprof run --pprof-addr localhost:6060 --no-cpu -- ./examples/starter
+
+# 6. More profile shapes (leaks, contention, HTTP): see examples/README.md
+#    for the guided tour.
 ```
 
 ## Library use
@@ -95,19 +104,15 @@ go tool pprof http://localhost:6060/debug/pprof/heap
 
 ```bash
 go build -o /tmp/goprof ./cmd/goprof
-/tmp/goprof collect --help
+/tmp/goprof ps --go-only                         # find targets
+/tmp/goprof attach --pid 1234 --seconds 30       # profile a live process
+/tmp/goprof run --seconds 30 -- ./myapp --serve  # launch + profile
+/tmp/goprof collect --addr localhost:6060 --type heap --output profiles/heap.pb.gz
+/tmp/goprof flame --input profiles/heap.pb.gz --output profiles/flame.svg --html profiles/flame.html
 /tmp/goprof list --dir profiles
-/tmp/goprof ps --go-only
-/tmp/goprof attach --pid 1234 --seconds 30
 ```
 
-Types: `cpu | heap | goroutine | block | mutex | trace`.
-
-```bash
-go build -o /tmp/goprof ./cmd/goprof
-/tmp/goprof flame --input profiles/cpu.pb.gz --output profiles/flame.svg
-/tmp/goprof flame --input profiles/cpu.pb.gz --list-samples
-```
+`collect --type`: `cpu | heap | goroutine | block | mutex | trace`.
 
 ## Flamegraphs
 
@@ -181,6 +186,7 @@ goprof attach --name myservice --seconds 30
 # memory only (works without perf), or custom sampling
 goprof attach --pid 1234 --seconds 60 --no-cpu --mem-interval 200ms
 goprof attach --pid 1234 --seconds 30 --freq 199 --callgraph fp --include-kernel
+goprof attach --pid 1234 --seconds 30 --event cpu-clock   # no PMU (VMs/WSL)
 ```
 
 Artifacts per run: `perf.data` (raw, for `perf report -i`),
@@ -208,7 +214,7 @@ goprof run --seconds 30 -- ./myapp --serve
 
 # endpoint mode: also fetch the app's pprof endpoint (no perf needed)
 goprof run --pprof-addr localhost:6060 -- ./myapp --serve
-goprof run --pprof-addr localhost:6060 --pprof-seconds 10 --no-cpu -- go run ./examples/starter
+goprof run --pprof-addr localhost:6060 --pprof-seconds 10 --no-cpu -- ./examples/starter
 
 # Go source targets run via `go run` (no need to build first)
 goprof run --seconds 30 -- ./main.go --serve
@@ -218,6 +224,7 @@ goprof run --go-flag -race --seconds 30 -- ./main.go   # build flags supported
 # environment, working dir, kernel frames, leave servers running
 goprof run -e PORT=8080 -e GOMAXPROCS=4 --dir ./service -- ./myapp
 goprof run --seconds 30 --detach -- ./myapp --serve
+goprof run --seconds 30 --event cpu-clock -- ./myapp   # no PMU (VMs/WSL)
 ```
 
 Artifacts land in `profiles/run-<cmd>-<timestamp>/` (`flame.svg`,
@@ -227,7 +234,8 @@ Artifacts land in `profiles/run-<cmd>-<timestamp>/` (`flame.svg`,
 - No `--seconds`: profiles until the app exits; its exit code is
   propagated (nonzero is not a profiler error).
 - `--seconds N`: sampling window; the app is then terminated (or left
-  running with `--detach`).
+  running with `--detach`). When profiling succeeded, goprof exits 0
+  even though the app was cut short.
 - Ctrl-C: terminates the app, keeps partial artifacts (CSVs stream,
   perf finalizes gracefully), exits 130.
 
@@ -243,11 +251,12 @@ s, err := runner.Run(runner.Options{
 // s.ExitCode, s.SVG, s.Mem, s.PprofHeap, s.Warnings, ...
 ```
 
-## Next steps (v0.6 ideas)
+## Next steps (v0.9 ideas)
 
 - Goroutine / block / mutex capture in `Profiler`
 - `trace` support (`runtime/trace`)
 - TUI live view (goroutines, heap)
+- `--html` viewer output for `attach` and `run` (today: `flame --html`)
 - Auth wrapper for the HTTP endpoint
 - CI + `goreleaser` + `go tool pprof -http` integration
 

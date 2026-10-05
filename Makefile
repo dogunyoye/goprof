@@ -23,11 +23,11 @@ ps:
 
 # Launch + profile in one command: external mode (needs perf).
 run:
-	go run ./cmd/goprof run --seconds 12 -- go run ./examples/starter
+	go run ./cmd/goprof run --seconds 12 -- ./examples/starter
 
 # Launch + profile in one command: endpoint mode via the starter's :6060.
 run-pprof:
-	go run ./cmd/goprof run --pprof-addr localhost:6060 --no-cpu -- go run ./examples/starter
+	go run ./cmd/goprof run --pprof-addr localhost:6060 --no-cpu -- ./examples/starter
 
 # Build all example apps (smoke check).
 examples:
