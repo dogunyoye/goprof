@@ -23,6 +23,9 @@ type Options struct {
 	// FoldedOutput optionally also writes folded stacks
 	// (flamegraph.pl / Speedscope compatible) to this path.
 	FoldedOutput string
+	// HTMLOutput optionally also writes a standalone HTML viewer page
+	// (sticky toolbar + inline SVG) to this path.
+	HTMLOutput string
 }
 
 // DefaultOptions returns recommended defaults (auto sample selection,
@@ -41,6 +44,7 @@ type Summary struct {
 	Input      string
 	SVG        string
 	Folded     string
+	HTML       string
 	Total      int64
 	Unit       string
 	SampleType string
@@ -93,11 +97,12 @@ func renderData(inputPath string, data *ProfileData, outputPath string, opts Opt
 		return s, fmt.Errorf("flamegraph: create %s: %w", outputPath, err)
 	}
 	frames, err := RenderSVG(data, out, SVGOptions{
-		Title:     opts.Title,
-		Width:     opts.Width,
-		RowHeight: opts.RowHeight,
-		MinWidth:  opts.MinWidth,
-		MaxDepth:  opts.MaxDepth,
+		Title:         opts.Title,
+		Width:         opts.Width,
+		RowHeight:     opts.RowHeight,
+		MinWidth:      opts.MinWidth,
+		MaxDepth:      opts.MaxDepth,
+		EmbedControls: true,
 	})
 	closeErr := out.Close()
 	if err != nil {
@@ -134,6 +139,31 @@ func renderData(inputPath string, data *ProfileData, outputPath string, opts Opt
 			return s, fmt.Errorf("flamegraph: write %s: %w", opts.FoldedOutput, closeErr)
 		}
 		s.Folded = opts.FoldedOutput
+	}
+
+	if opts.HTMLOutput != "" {
+		if err := os.MkdirAll(filepath.Dir(opts.HTMLOutput), 0o755); err != nil {
+			return s, fmt.Errorf("flamegraph: mkdir html: %w", err)
+		}
+		hf, err := os.Create(opts.HTMLOutput)
+		if err != nil {
+			return s, fmt.Errorf("flamegraph: create %s: %w", opts.HTMLOutput, err)
+		}
+		_, err = RenderHTML(data, hf, SVGOptions{
+			Title:     opts.Title,
+			Width:     opts.Width,
+			RowHeight: opts.RowHeight,
+			MinWidth:  opts.MinWidth,
+			MaxDepth:  opts.MaxDepth,
+		})
+		closeErr := hf.Close()
+		if err != nil {
+			return s, err
+		}
+		if closeErr != nil {
+			return s, fmt.Errorf("flamegraph: write %s: %w", opts.HTMLOutput, closeErr)
+		}
+		s.HTML = opts.HTMLOutput
 	}
 	return s, nil
 }

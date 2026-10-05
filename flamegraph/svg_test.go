@@ -27,7 +27,7 @@ func renderTestSVG(t *testing.T) string {
 		SampleType: "cpu",
 	}
 	var b strings.Builder
-	if _, err := RenderSVG(data, &b, SVGOptions{Width: 1200, RowHeight: 22, MinWidth: 0.5}); err != nil {
+	if _, err := RenderSVG(data, &b, SVGOptions{Width: 1200, RowHeight: 22, MinWidth: 0.5, EmbedControls: true}); err != nil {
 		t.Fatal(err)
 	}
 	return b.String()

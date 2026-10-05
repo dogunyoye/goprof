@@ -1,4 +1,4 @@
-# goprof — profiler for Go apps (v0.7)
+# goprof — profiler for Go apps (v0.8)
 
 CPU + heap sampling for instrumented apps (`runtime/pprof`), flamegraph
 rendering, zero-instrumentation attach profiling of running processes,
@@ -128,6 +128,11 @@ goprof flame --input profiles/cpu.pb.gz --output profiles/flame.svg \
 # tune layout
 goprof flame --input profiles/cpu.pb.gz --output profiles/flame.svg \
   --width 1600 --row-height 20 --min-width 1 --max-depth 30
+
+# HTML viewer: same flamegraph with a sticky toolbar, so search and
+# reset stay visible no matter how deep you zoom or scroll
+goprof flame --input profiles/cpu.pb.gz --output profiles/flame.svg \
+  --html profiles/flame.html
 ```
 
 Library use:

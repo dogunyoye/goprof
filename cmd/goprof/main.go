@@ -24,7 +24,7 @@ import (
 	"goprof/runner"
 )
 
-const version = "v0.7.0"
+const version = "v0.8.0"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -152,6 +152,7 @@ func runFlame(args []string) {
 	input := fs.String("input", "", "path to a pprof profile (cpu.pb.gz, mem.pb.gz, …)")
 	output := fs.String("output", "", "destination .svg path")
 	folded := fs.String("folded", "", "optional path to also write folded stacks (flamegraph.pl/Speedscope compatible)")
+	html := fs.String("html", "", "optional path to also write an HTML viewer (sticky search/zoom toolbar + inline SVG)")
 	title := fs.String("title", "", "SVG title (default: Flamegraph — <sample type>)")
 	width := fs.Int("width", 1200, "SVG canvas width in px")
 	rowHeight := fs.Int("row-height", 22, "px height per stack frame")
@@ -192,6 +193,7 @@ func runFlame(args []string) {
 	opts.MaxDepth = *maxDepth
 	opts.SampleIndex = *sampleIndex
 	opts.FoldedOutput = *folded
+	opts.HTMLOutput = *html
 
 	isFolded := strings.ToLower(strings.TrimSpace(*format))
 	switch isFolded {
@@ -225,7 +227,10 @@ func runFlame(args []string) {
 	if s.Folded != "" {
 		fmt.Println("folded:    ", s.Folded)
 	}
-	fmt.Println("open the .svg in a browser (click a frame to zoom, search to highlight)")
+	if s.HTML != "" {
+		fmt.Println("html:      ", s.HTML)
+	}
+	fmt.Println("open the .svg (or .html viewer) in a browser (click a frame to zoom, search to highlight)")
 }
 
 func runPs(args []string) {

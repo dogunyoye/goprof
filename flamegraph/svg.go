@@ -17,6 +17,11 @@ type SVGOptions struct {
 	MinWidth float64
 	// MaxDepth truncates stacks deeper than this (0 = unlimited).
 	MaxDepth int
+	// EmbedControls adds the in-SVG search box and "reset zoom" label.
+	// Standalone .svg files want this (default behavior of Generate);
+	// the HTML viewer (RenderHTML) sets it false because its sticky
+	// toolbar provides those controls instead.
+	EmbedControls bool
 }
 
 // DefaultSVGOptions returns v1 renderer defaults.
@@ -128,10 +133,12 @@ func RenderSVG(data *ProfileData, w io.Writer, opts SVGOptions) (frames int, err
 		int(padL), esc(title))
 	fmt.Fprintf(&b, `<text x="%d" y="42" font-size="12" fill="#555">%s · %d stacks · %d frames max depth</text>`+"\n",
 		int(padL), esc(fmt.Sprintf("total %s %s", formatValue(data.Total, data.Unit), data.Unit)), len(data.Stacks), maxDepth)
-	fmt.Fprintf(&b, `<text x="%d" y="42" text-anchor="end" font-size="12" fill="#06c" style="cursor:pointer" onclick="gprofReset()">reset zoom</text>`+"\n",
-		opts.Width-int(padR))
-	fmt.Fprintf(&b, `<foreignObject x="%d" y="50" width="%d" height="22"><input xmlns="http://www.w3.org/1999/xhtml" placeholder="search function…" oninput="gprofSearch(this.value)" style="width:100%%;font:12px monospace;border:1px solid #ccc;border-radius:4px;padding:1px 6px;"/></foreignObject>`+"\n",
-		int(padL), opts.Width-int(padL)-int(padR))
+	if opts.EmbedControls {
+		fmt.Fprintf(&b, `<text x="%d" y="42" text-anchor="end" font-size="12" fill="#06c" style="cursor:pointer" onclick="gprofReset()">reset zoom</text>`+"\n",
+			opts.Width-int(padR))
+		fmt.Fprintf(&b, `<foreignObject x="%d" y="50" width="%d" height="22"><input xmlns="http://www.w3.org/1999/xhtml" placeholder="search function…" oninput="gprofSearch(this.value)" style="width:100%%;font:12px monospace;border:1px solid #ccc;border-radius:4px;padding:1px 6px;"/></foreignObject>`+"\n",
+			int(padL), opts.Width-int(padL)-int(padR))
+	}
 
 	// y for depth d (0 = root frame, at the bottom).
 	yOf := func(d int) int { return topH + (maxDepth-1-d)*rowH }
