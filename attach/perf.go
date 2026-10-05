@@ -2,7 +2,6 @@ package attach
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +10,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"goprof/flamegraph"
@@ -39,14 +39,38 @@ func PerfAvailable() error {
 // path. Requires Linux, perf, and permission to trace the target
 // (same UID or root; kernel.perf_event_paranoid <= 2 for user space).
 func RecordCPU(pid, seconds, freq int, callgraph, workDir string) (string, error) {
-	if err := PerfAvailable(); err != nil {
-		return "", err
-	}
-	if _, err := os.Stat(fmt.Sprintf("/proc/%d", pid)); err != nil {
-		return "", fmt.Errorf("attach: no such process (pid %d)", pid)
-	}
 	if seconds <= 0 {
 		return "", fmt.Errorf("attach: seconds must be > 0")
+	}
+	rec, err := StartRecording(pid, freq, callgraph, workDir)
+	if err != nil {
+		return "", err
+	}
+	time.Sleep(time.Duration(seconds) * time.Second)
+	if err := rec.Stop(); err != nil {
+		return "", err
+	}
+	return rec.DataPath(), nil
+}
+
+// Recording is a running `perf record -p` session. It records until
+// Stop (graceful, SIGINT) or Kill, which makes it suitable for
+// profiling child processes whose lifetime is unknown upfront.
+type Recording struct {
+	cmd      *exec.Cmd
+	dataPath string
+	stderr   strings.Builder
+	waited   chan error // Wait result; closed exactly once
+}
+
+// StartRecording begins `perf record` on pid in the background.
+// Call Stop to finish gracefully and finalize perf.data.
+func StartRecording(pid, freq int, callgraph, workDir string) (*Recording, error) {
+	if err := PerfAvailable(); err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(fmt.Sprintf("/proc/%d", pid)); err != nil {
+		return nil, fmt.Errorf("attach: no such process (pid %d)", pid)
 	}
 	if freq <= 0 {
 		freq = 99
@@ -55,39 +79,96 @@ func RecordCPU(pid, seconds, freq int, callgraph, workDir string) (string, error
 		callgraph = CallgraphDwarf
 	}
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
-		return "", fmt.Errorf("attach: mkdir %s: %w", workDir, err)
+		return nil, fmt.Errorf("attach: mkdir %s: %w", workDir, err)
 	}
 	dataPath := filepath.Join(workDir, "perf.data")
 
-	ctx, cancel := context.WithTimeout(context.Background(),
-		time.Duration(seconds+30)*time.Second)
-	defer cancel()
+	cmd := exec.Command("perf", recordArgs(pid, freq, callgraph, dataPath)...)
+	rec := &Recording{cmd: cmd, dataPath: dataPath, waited: make(chan error, 1)}
+	cmd.Stderr = &rec.stderr
+	// Detach perf from our process group so a terminal Ctrl-C aimed at
+	// the profiled app does not kill the recorder mid-write; Stop
+	// signals it explicitly.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("attach: start perf: %w", err)
+	}
+	go func() { rec.waited <- cmd.Wait() }()
+	// Fail fast if perf exits immediately (bad pid, no permission).
+	select {
+	case err := <-rec.waited:
+		return nil, fmt.Errorf("attach: perf exited immediately: %v%s", err, withTail(rec.stderr.String()))
+	case <-time.After(200 * time.Millisecond):
+	}
+	return rec, nil
+}
 
-	args := []string{
+// Stop asks perf to finalize (SIGINT) and waits up to 10s for
+// perf.data. Falls back to SIGKILL on timeout.
+func (r *Recording) Stop() error {
+	select {
+	case <-r.waited: // already exited (e.g. immediate failure missed above)
+		return r.checkData()
+	default:
+	}
+	_ = r.cmd.Process.Signal(syscall.SIGINT)
+	select {
+	case <-r.waited:
+	case <-time.After(10 * time.Second):
+		_ = r.cmd.Process.Kill()
+		<-r.waited
+	}
+	return r.checkData()
+}
+
+// Kill aborts the recording immediately (no perf.data guarantee).
+func (r *Recording) Kill() {
+	select {
+	case <-r.waited:
+	default:
+		_ = r.cmd.Process.Kill()
+		<-r.waited
+	}
+}
+
+// DataPath is the destination perf.data file.
+func (r *Recording) DataPath() string { return r.dataPath }
+
+func (r *Recording) checkData() error {
+	if fi, err := os.Stat(r.dataPath); err != nil || fi.Size() == 0 {
+		return fmt.Errorf("attach: perf produced no data (target may have exited)%s",
+			withTail(r.stderr.String()))
+	}
+	return nil
+}
+
+func recordArgs(pid, freq int, callgraph, dataPath string) []string {
+	return []string{
 		"record", "-F", fmt.Sprint(freq),
 		"-p", fmt.Sprint(pid),
 		"-g", "--call-graph", callgraph,
 		"-o", dataPath,
-		"--", "sleep", fmt.Sprint(seconds),
 	}
-	cmd := exec.CommandContext(ctx, "perf", args...)
-	out, err := cmd.CombinedOutput()
-	tail := strings.TrimSpace(string(out))
-	if len(tail) > 800 {
-		tail = tail[len(tail)-800:]
+}
+
+func withTail(s string) string {
+	if t := perfTail(s); t != "" {
+		return "\nperf output: " + t
 	}
-	if err != nil {
-		hint := ""
-		if strings.Contains(tail, "Permission") || strings.Contains(tail, "permission") ||
-			strings.Contains(tail, "paranoid") || strings.Contains(tail, "Access") {
-			hint = " (hint: run as the same user as the target or root; check /proc/sys/kernel/perf_event_paranoid, values 2 or lower allow user-space sampling)"
-		}
-		return "", fmt.Errorf("attach: perf record failed%s: %v\nperf output: %s", hint, err, tail)
+	return ""
+}
+
+func perfTail(s string) string {
+	t := strings.TrimSpace(s)
+	if len(t) > 800 {
+		t = t[len(t)-800:]
 	}
-	if fi, err := os.Stat(dataPath); err != nil || fi.Size() == 0 {
-		return "", fmt.Errorf("attach: perf produced no data (target may have exited): %s", tail)
+	// Reuse the permission hint for the common failure mode.
+	if strings.Contains(t, "Permission") || strings.Contains(t, "permission") ||
+		strings.Contains(t, "paranoid") || strings.Contains(t, "Access") {
+		t += " (hint: run as the same user as the target or root; check /proc/sys/kernel/perf_event_paranoid, values 2 or lower allow user-space sampling)"
 	}
-	return dataPath, nil
+	return t
 }
 
 var (

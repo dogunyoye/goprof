@@ -1,15 +1,17 @@
 // Command goprof profiles Go applications: instrumented (collect),
-// offline (flame), or by attaching to a running process (attach/ps).
+// offline (flame), by attaching to a running process (attach/ps),
+// or by launching the app under the profiler (run).
 //
 // Usage:
 //
+//	goprof run --seconds 30 -- ./myapp --serve
+//	goprof attach --pid 1234 --seconds 30
 //	goprof collect --addr http://localhost:6060 --type heap --output profiles/heap.pb.gz
 //	goprof flame --input profiles/cpu.pb.gz --output profiles/flame.svg
-//	goprof ps --go-only
-//	goprof attach --pid 1234 --seconds 30
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -19,9 +21,10 @@ import (
 	"goprof/attach"
 	"goprof/collector"
 	"goprof/flamegraph"
+	"goprof/runner"
 )
 
-const version = "v0.3.0"
+const version = "v0.4.0"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -39,6 +42,8 @@ func main() {
 		runPs(os.Args[2:])
 	case "attach":
 		runAttach(os.Args[2:])
+	case "run":
+		runRun(os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Println("goprof", version)
 	default:
@@ -52,19 +57,21 @@ func usage() {
 	fmt.Println(`goprof - profiler for Go applications
 
 Commands:
+  run       launch an app and profile it in the same command
+  attach    profile a running process without instrumentation (Linux perf + RSS)
+  ps        list processes (find attach targets)
   collect   fetch a profile from /debug/pprof (instrumented apps)
   list      list local profile files
   flame     convert a saved profile to a flamegraph SVG (+ optional folded)
-  ps        list processes (find attach targets)
-  attach    profile a running process without instrumentation (Linux perf + RSS)
   version   print version
 
 Examples:
+  goprof run --seconds 30 -- ./myapp --serve
+  goprof run --pprof-addr localhost:6060 -- go run ./example
+  goprof attach --pid 1234 --seconds 30
   goprof collect --addr http://localhost:6060 --type heap --output profiles/heap.pb.gz
   goprof flame --input profiles/cpu.pb.gz --output profiles/flame.svg
-  goprof ps --go-only
-  goprof attach --pid 1234 --seconds 30
-  goprof attach --name myservice --seconds 30 --no-cpu`)
+  goprof ps --go-only`)
 }
 
 func runCollect(args []string) {
@@ -302,4 +309,107 @@ func targetDesc(pid int, name string) string {
 		return fmt.Sprintf("pid %d", pid)
 	}
 	return fmt.Sprintf("process matching %q", name)
+}
+
+// envFlags collects repeatable -e/--env KEY=VAL flags.
+type envFlags []string
+
+func (e *envFlags) String() string     { return strings.Join(*e, ",") }
+func (e *envFlags) Set(v string) error { *e = append(*e, v); return nil }
+
+func runRun(args []string) {
+	fs := flag.NewFlagSet("run", flag.ExitOnError)
+	seconds := fs.Int("seconds", 0, "sampling window in seconds (0 = until the app exits)")
+	freq := fs.Int("freq", 99, "perf samples per second")
+	callgraph := fs.String("callgraph", "dwarf", "perf unwinding: dwarf (reliable for Go) or fp")
+	outputDir := fs.String("output-dir", "profiles", "directory for the run artifacts")
+	prefix := fs.String("prefix", "", "artifact directory name (default run-<cmd>-<timestamp>)")
+	noCPU := fs.Bool("no-cpu", false, "disable perf CPU sampling")
+	noMem := fs.Bool("no-mem", false, "disable RSS memory sampling")
+	memInterval := fs.Duration("mem-interval", 500*time.Millisecond, "RSS poll period")
+	includeKernel := fs.Bool("include-kernel", false, "keep kernel frames in the flamegraph")
+	pprofAddr := fs.String("pprof-addr", "", "fetch the child's pprof endpoint too (e.g. localhost:6060)")
+	pprofWait := fs.Duration("pprof-wait", 15*time.Second, "how long to wait for the pprof endpoint")
+	pprofSeconds := fs.Int("pprof-seconds", 10, "endpoint CPU profile duration in seconds")
+	detach := fs.Bool("detach", false, "leave the app running when the window ends (default: terminate it)")
+	title := fs.String("title", "", "SVG title override")
+	width := fs.Int("width", 1200, "SVG canvas width in px")
+	dir := fs.String("dir", "", "working directory for the app")
+	var envs envFlags
+	fs.Var(&envs, "env", "extra child env (KEY=VAL, repeatable)")
+	fs.Var(&envs, "e", "shorthand for --env")
+	_ = fs.Parse(args)
+
+	cmd := fs.Args()
+	if len(cmd) == 0 {
+		fmt.Fprintln(os.Stderr, "run: no command given (usage: goprof run [flags] -- <cmd> [args...])")
+		os.Exit(2)
+	}
+
+	opts := runner.DefaultOptions(cmd)
+	opts.Seconds = *seconds
+	opts.Freq = *freq
+	opts.Callgraph = *callgraph
+	opts.OutputDir = *outputDir
+	opts.Prefix = *prefix
+	opts.CPU = !*noCPU
+	opts.Mem = !*noMem
+	opts.MemInterval = *memInterval
+	opts.IncludeKernel = *includeKernel
+	opts.PprofAddr = *pprofAddr
+	opts.PprofWait = *pprofWait
+	opts.PprofSeconds = *pprofSeconds
+	opts.Detach = *detach
+	opts.Title = *title
+	opts.Dir = *dir
+	opts.Env = []string(envs)
+	fopts := flamegraph.DefaultOptions()
+	fopts.Width = *width
+	opts.FlameOpts = fopts
+
+	fmt.Printf("running profiling: %s\n", strings.Join(cmd, " "))
+	s, err := runner.Run(opts)
+	for _, w := range s.Warnings {
+		fmt.Fprintln(os.Stderr, "warning:", w)
+	}
+	printRunSummary(s)
+	if err != nil {
+		if errors.Is(err, runner.ErrInterrupted) {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(130)
+		}
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	// Propagate the app's own exit code when it ran to completion.
+	if s.ExitedEarly && s.ExitCode != 0 {
+		os.Exit(s.ExitCode)
+	}
+}
+
+func printRunSummary(s runner.Summary) {
+	if s.Detached {
+		fmt.Printf("app left running (pid %d, --detach)\n", s.PID)
+	} else if s.ExitedEarly {
+		fmt.Printf("app exited with code %d after %.1fs\n", s.ExitCode, s.Duration.Seconds())
+	} else {
+		fmt.Printf("window ended after %.1fs (app terminated)\n", s.Duration.Seconds())
+	}
+	if s.SVG != "" {
+		fmt.Printf("flamegraph: %s (%d samples, %d stacks, %d frames)\n",
+			s.SVG, s.Samples, s.Stacks, s.Frames)
+	}
+	if s.Folded != "" {
+		fmt.Printf("folded:     %s\nperf data:  %s\n", s.Folded, s.PerfData)
+	}
+	if s.HaveMem {
+		fmt.Printf("memory:     %s (min %d KB, max %d KB, avg %d KB, growth %+d KB over %.1fs)\n",
+			s.Mem.CSV, s.Mem.MinKB, s.Mem.MaxKB, s.Mem.AvgKB, s.Mem.GrowthKB, s.Mem.ElapsedSecs)
+	}
+	if s.PprofHeap != "" {
+		fmt.Printf("pprof heap: %s -> %s\n", s.PprofHeap, s.PprofHeapSVG)
+	}
+	if s.PprofCPU != "" {
+		fmt.Printf("pprof cpu:  %s -> %s\n", s.PprofCPU, s.PprofCPUSVG)
+	}
 }

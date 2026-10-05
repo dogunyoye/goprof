@@ -12,6 +12,7 @@ profiles/*.folded
 profiles/*.csv
 profiles/*.data
 profiles/attach-*/
+profiles/run-*/
 !profiles/.gitkeep
 
 # Go
