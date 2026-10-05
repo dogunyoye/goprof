@@ -8,10 +8,10 @@ import (
 )
 
 var (
-	zoomHandlerRe = regexp.MustCompile(`<g class="f"[^>]*onclick="gprofZoom\(([\d.]+),([\d.]+)\)"[^>]*>\s*<rect x="([\d.]+)"[^>]*width="([\d.]+)"`)
-	viewBoxRe     = regexp.MustCompile(`<svg[^>]*id="gprof-svg"[^>]*data-w="(\d+)"[^>]*data-h="(\d+)"[^>]*width="(\d+)"[^>]*height="(\d+)"[^>]*viewBox="0 0 (\d+) (\d+)"`)
-	calledFnRe    = regexp.MustCompile(`\son(?:click|dblclick|input)="([A-Za-z_][A-Za-z0-9_]*)\(`)
-	definedFnRe   = regexp.MustCompile(`function ([A-Za-z_][A-Za-z0-9_]*)\(`)
+	frameGeomRe = regexp.MustCompile(`<g class="f"[^>]*data-x="([\d.]+)"[^>]*data-w="([\d.]+)"[^>]*onclick="gprofZoom\(this\)"[^>]*>\s*<rect x="([\d.]+)"[^>]*width="([\d.]+)"`)
+	viewBoxRe   = regexp.MustCompile(`<svg[^>]*id="gprof-svg"[^>]*data-w="(\d+)"[^>]*data-h="(\d+)"[^>]*width="(\d+)"[^>]*height="(\d+)"[^>]*viewBox="0 0 (\d+) (\d+)"`)
+	calledFnRe  = regexp.MustCompile(`\son(?:click|dblclick|input)="([A-Za-z_][A-Za-z0-9_]*)\(`)
+	definedFnRe = regexp.MustCompile(`function ([A-Za-z_][A-Za-z0-9_]*)\(`)
 )
 
 func renderTestSVG(t *testing.T) string {
@@ -33,29 +33,35 @@ func renderTestSVG(t *testing.T) string {
 	return b.String()
 }
 
-// TestZoomHandlersMatchFrames ensures every click-to-zoom handler points
-// at exactly the frame it is attached to: same x, and width equal to the
-// rect width plus the 1px gutter subtracted at render time.
-func TestZoomHandlersMatchFrames(t *testing.T) {
+// TestZoomFramesCarryGeometry ensures every frame carries the original
+// coordinates the transform zoom needs (data-x/data-w), consistent with
+// its rect: rect.x == pad+data-x and rect.width == max(data-w-1, 0.5px
+// gutter floor). Zoom math replays from these, so they must agree.
+func TestZoomFramesCarryGeometry(t *testing.T) {
 	svg := renderTestSVG(t)
-	matches := zoomHandlerRe.FindAllStringSubmatch(svg, -1)
+	matches := frameGeomRe.FindAllStringSubmatch(svg, -1)
 	if len(matches) == 0 {
-		t.Fatal("no zoom handlers found")
+		t.Fatal("no zoomable frames found")
 	}
+	const pad, plot = 10.0, 1180.0
 	for _, m := range matches {
-		hx, hw := mustFloat(t, m[1]), mustFloat(t, m[2])
+		ox, ow := mustFloat(t, m[1]), mustFloat(t, m[2])
 		rx, rw := mustFloat(t, m[3]), mustFloat(t, m[4])
-		if hx != rx {
-			t.Errorf("handler x %v != rect x %v", hx, rx)
+		if rx != pad+ox {
+			t.Errorf("rect x %v != pad+data-x %v", rx, pad+ox)
 		}
-		if hw-rw != 1 {
-			t.Errorf("handler w %v != rect w %v + 1px gutter", hw, rw)
+		wantW := ow - 1
+		if wantW < 0.5 {
+			wantW = 0.5
 		}
-		if hx < 0 || hx+hw > 1200 {
-			t.Errorf("zoom region out of canvas: x=%v w=%v", hx, hw)
+		if rw != wantW {
+			t.Errorf("rect width %v != data-w %v - gutter", rw, ow)
 		}
-		if hw <= 0 {
-			t.Errorf("non-positive zoom width %v", hw)
+		if ox < 0 || ox+ow > plot {
+			t.Errorf("frame region out of plot: x=%v w=%v", ox, ow)
+		}
+		if ow <= 0 {
+			t.Errorf("non-positive frame width %v", ow)
 		}
 	}
 }

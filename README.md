@@ -1,4 +1,4 @@
-# goprof — profiler for Go apps (v0.8)
+# goprof — profiler for Go apps (v0.9)
 
 CPU + heap sampling for instrumented apps (`runtime/pprof`), flamegraph
 rendering (SVG + HTML viewer), zero-instrumentation attach profiling of
@@ -119,7 +119,8 @@ go build -o /tmp/goprof ./cmd/goprof
 `goprof flame` parses any saved pprof profile (CPU, heap, goroutine,
 block, mutex) and renders a self-contained SVG: hover any frame for the
 exact value + share, use the search box to dim non-matches, click a
-frame to zoom (double-click background or `reset zoom` to zoom out).
+frame to expand it full-width (click deeper to drill down, double-click
+background or `reset zoom` to zoom out).
 
 Sample value selection is automatic: CPU time for `cpu` profiles,
 `alloc_space` for heap profiles, delay for block/mutex. Override with
@@ -251,7 +252,7 @@ s, err := runner.Run(runner.Options{
 // s.ExitCode, s.SVG, s.Mem, s.PprofHeap, s.Warnings, ...
 ```
 
-## Next steps (v0.9 ideas)
+## Next steps (v0.10 ideas)
 
 - Goroutine / block / mutex capture in `Profiler`
 - `trace` support (`runtime/trace`)
