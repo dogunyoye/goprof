@@ -1,4 +1,4 @@
-# goprof — profiler for Go apps (v0.5)
+# goprof — profiler for Go apps (v0.6)
 
 CPU + heap sampling for instrumented apps (`runtime/pprof`), flamegraph
 rendering, zero-instrumentation attach profiling of running processes,
@@ -155,6 +155,13 @@ into `rss.csv`. No code changes, no restart, no pprof endpoint.
 Requirements: Linux, the `perf` binary (`apt install linux-tools-generic`),
 and permission to trace the target (same UID or root;
 `kernel.perf_event_paranoid` ≤ 2 for user-space sampling).
+
+> WSL2 notes: `WARNING: perf not found for kernel …-microsoft` means the
+> distro wrapper has no microsoft-flavoured tools package — goprof routes
+> around this automatically (override with `GOPROF_PERF_BIN=/path/to/perf`).
+> To fix `perf` itself: `sudo ln -sf /usr/lib/linux-tools-<ver>/perf
+> /usr/local/bin/perf`. If the VM has no PMU passthrough (hardware `cycles`
+> unsupported), sample with `--event cpu-clock` instead.
 
 ```bash
 # find candidates (Go binaries flagged via build info)

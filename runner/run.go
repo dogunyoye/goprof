@@ -45,6 +45,9 @@ type Options struct {
 	Freq int
 	// Callgraph is "dwarf" (default, reliable for Go) or "fp".
 	Callgraph string
+	// Event selects the perf sampling event ("" = perf default, usually
+	// cycles; "cpu-clock" on VMs/WSL without PMU passthrough).
+	Event string
 	// OutputDir holds the run directory. Default "profiles".
 	OutputDir string
 	// Prefix names the run directory. Default "run-<cmd>-<timestamp>".
@@ -229,7 +232,7 @@ func Run(opts Options) (Summary, error) {
 	// CPU recorder. Fail fast when explicitly requested but broken.
 	var rec *attach.Recording
 	if opts.CPU {
-		r, err := attach.StartRecording(s.PID, opts.Freq, opts.Callgraph, workDir)
+		r, err := attach.StartRecording(s.PID, opts.Freq, opts.Callgraph, workDir, opts.Event)
 		if err != nil {
 			killErr := terminateChild(child, childDone)
 			_ = killErr
@@ -308,8 +311,10 @@ func Run(opts Options) (Summary, error) {
 		if err := rec.Stop(); err != nil {
 			rec.Kill()
 			s.Warnings = append(s.Warnings, "perf: "+err.Error())
+		} else if persisted, err := rec.Persist(workDir); err != nil {
+			s.Warnings = append(s.Warnings, "perf persist: "+err.Error())
 		} else {
-			s.PerfData = rec.DataPath()
+			s.PerfData = persisted
 			foldedPath := filepath.Join(workDir, "cpu.folded")
 			n, err := attach.ScriptToFolded(s.PerfData, foldedPath, s.PID, opts.IncludeKernel)
 			if err != nil {

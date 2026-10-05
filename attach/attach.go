@@ -22,6 +22,9 @@ type Options struct {
 	Freq int
 	// Callgraph is "dwarf" (default, reliable for Go) or "fp".
 	Callgraph string
+	// Event selects the perf sampling event ("" = perf default, usually
+	// cycles; "cpu-clock" on VMs/WSL without PMU passthrough).
+	Event string
 	// OutputDir holds all artifacts. Default "profiles".
 	OutputDir string
 	// Prefix names the artifacts. Default "attach-<exe>-<pid>-<timestamp>".
@@ -146,7 +149,7 @@ func Attach(opts Options) (Summary, error) {
 
 	// CPU in the foreground (perf blocks for the window).
 	if opts.CPU {
-		dataPath, err := RecordCPU(proc.PID, opts.Seconds, opts.Freq, opts.Callgraph, workDir)
+		dataPath, err := RecordCPU(proc.PID, opts.Seconds, opts.Freq, opts.Callgraph, workDir, opts.Event)
 		if err != nil {
 			// Stop memory early on CPU failure? No — let it finish;
 			// but surface the CPU error regardless.

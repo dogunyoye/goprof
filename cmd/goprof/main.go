@@ -24,7 +24,7 @@ import (
 	"goprof/runner"
 )
 
-const version = "v0.5.0"
+const version = "v0.6.0"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -255,6 +255,7 @@ func runAttach(args []string) {
 	seconds := fs.Int("seconds", 30, "sampling window in seconds")
 	freq := fs.Int("freq", 99, "perf samples per second")
 	callgraph := fs.String("callgraph", "dwarf", "perf unwinding: dwarf (reliable for Go) or fp")
+	event := fs.String("event", "", "perf sampling event (default cycles; try cpu-clock on VMs/WSL without PMU)")
 	outputDir := fs.String("output-dir", "profiles", "directory for the run artifacts")
 	prefix := fs.String("prefix", "", "artifact directory name (default attach-<exe>-<pid>-<timestamp>)")
 	noCPU := fs.Bool("no-cpu", false, "disable perf CPU sampling")
@@ -271,6 +272,7 @@ func runAttach(args []string) {
 	opts.Seconds = *seconds
 	opts.Freq = *freq
 	opts.Callgraph = *callgraph
+	opts.Event = *event
 	opts.OutputDir = *outputDir
 	opts.Prefix = *prefix
 	opts.CPU = !*noCPU
@@ -323,6 +325,7 @@ func runRun(args []string) {
 	seconds := fs.Int("seconds", 0, "sampling window in seconds (0 = until the app exits)")
 	freq := fs.Int("freq", 99, "perf samples per second")
 	callgraph := fs.String("callgraph", "dwarf", "perf unwinding: dwarf (reliable for Go) or fp")
+	event := fs.String("event", "", "perf sampling event (default cycles; try cpu-clock on VMs/WSL without PMU)")
 	outputDir := fs.String("output-dir", "profiles", "directory for the run artifacts")
 	prefix := fs.String("prefix", "", "artifact directory name (default run-<cmd>-<timestamp>)")
 	noCPU := fs.Bool("no-cpu", false, "disable perf CPU sampling")
@@ -353,6 +356,7 @@ func runRun(args []string) {
 	opts.Seconds = *seconds
 	opts.Freq = *freq
 	opts.Callgraph = *callgraph
+	opts.Event = *event
 	opts.OutputDir = *outputDir
 	opts.Prefix = *prefix
 	opts.CPU = !*noCPU

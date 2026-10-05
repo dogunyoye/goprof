@@ -222,6 +222,25 @@ other 9999 [000] 100.030000: 10000 cycles:u:
 	}
 }
 
+func TestParsePerfScriptNoCPUField(t *testing.T) {
+	// Some perf builds omit the [cpu] field on event lines.
+	script := `burn.sh 42370 65445.935894:          1 cycles:Pu:
+	    5a5e9a7a7af4 [unknown] (/usr/bin/dash)
+	    5a5e9a7b3f61 [unknown] (/usr/bin/dash)
+
+burn.sh 42370 65445.935929:          1 cycles:Pu:
+	    7222a84ab258 _int_free+0x8 (/usr/lib/x86_64-linux-gnu/libc.so.6)
+`
+	agg := map[string]int{}
+	n, err := parsePerfScript(strings.NewReader(script), 42370, false, agg, map[string][]string{})
+	if err != nil || n != 2 {
+		t.Fatalf("no-cpu-field: n=%d err=%v", n, err)
+	}
+	if len(agg) != 2 {
+		t.Fatalf("expected 2 stacks, got %v", agg)
+	}
+}
+
 func TestCleanSymbol(t *testing.T) {
 	cases := map[string]string{
 		"main.burnCPU+0x2f":   "main.burnCPU",
