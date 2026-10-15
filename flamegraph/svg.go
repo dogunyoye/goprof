@@ -163,20 +163,23 @@ func RenderSVG(data *ProfileData, w io.Writer, opts SVGOptions) (frames int, err
 			fmt.Fprintf(&b, `<rect x="%s" y="%d" width="%s" height="%d" rx="2" fill="%s" stroke="#fff"/>`+"\n",
 				f2s(padL+x0), y, f2s(math.Max(wpx-1, 0.5)), rowH-2, fill)
 			fmt.Fprintf(&b, `<title>%s</title>`+"\n", esc(tip))
-			// Label only when the frame fits readable text.
+			// Always emit a <text> element (possibly empty) so the
+			// zoom handler can fill in the label once the frame
+			// becomes wide enough. Omitting it for narrow frames
+			// would leave zoomed frames permanently unlabeled since
+			// gprofApply only updates existing nodes.
+			label := ""
 			if wpx > 30 {
 				maxChars := int((wpx - 8) / 7)
-				label := c.name
+				label = c.name
 				if len(label) > maxChars && maxChars > 4 {
 					label = label[:maxChars-1] + "…"
 				} else if len(label) > maxChars {
 					label = ""
 				}
-				if label != "" {
-					fmt.Fprintf(&b, `<text x="%s" y="%d" font-size="12" fill="#1a1a1a" pointer-events="none">%s</text>`+"\n",
-						f2s(padL+x0+4), y+rowH-8, esc(label))
-				}
 			}
+			fmt.Fprintf(&b, `<text x="%s" y="%d" font-size="12" fill="#1a1a1a" pointer-events="none">%s</text>`+"\n",
+				f2s(padL+x0+4), y+rowH-8, esc(label))
 			b.WriteString("</g>\n")
 			render(c, x0, depth+1)
 		}
@@ -189,7 +192,7 @@ func RenderSVG(data *ProfileData, w io.Writer, opts SVGOptions) (frames int, err
 var gprofRootX=0,gprofRootW=0;
 function gprofGeom(){var s=document.getElementById('gprof-svg');return{pad:parseFloat(s.getAttribute('data-pad')),plot:parseFloat(s.getAttribute('data-plot'))};}
 function gprofLabel(name,w){if(w<=30)return '';var mc=Math.floor((w-8)/7);if(name.length<=mc)return name;return mc>4?name.substring(0,mc-1)+'…':'';}
-function gprofApply(){var g=gprofGeom();if(!gprofRootW)gprofRootW=g.plot;var k=g.plot/gprofRootW,els=document.getElementsByClassName('f');for(var i=0;i<els.length;i++){var el=els[i],ox=parseFloat(el.getAttribute('data-x')),ow=parseFloat(el.getAttribute('data-w')),nx=g.pad+(ox-gprofRootX)*k,nw=ow*k,vis=nx<g.pad+g.plot&&nx+nw>g.pad;el.style.display=vis?'':'none';if(!vis)continue;var r=el.querySelector('rect');if(r){r.setAttribute('x',nx.toFixed(2));r.setAttribute('width',Math.max(nw-1,0.5).toFixed(2));}var t=el.querySelector('text');if(t){t.setAttribute('x',(nx+4).toFixed(2));t.textContent=gprofLabel(el.getAttribute('data-f'),nw);}}}
+function gprofApply(){var g=gprofGeom();if(!gprofRootW)gprofRootW=g.plot;var k=g.plot/gprofRootW,els=document.getElementsByClassName('f');for(var i=0;i<els.length;i++){var el=els[i],ox=parseFloat(el.getAttribute('data-x')),ow=parseFloat(el.getAttribute('data-w')),nx=g.pad+(ox-gprofRootX)*k,nw=ow*k,vis=nx<g.pad+g.plot&&nx+nw>g.pad;el.style.display=vis?'':'none';if(!vis)continue;var r=el.querySelector('rect');if(r){r.setAttribute('x',nx.toFixed(2));r.setAttribute('width',Math.max(nw-1,0.5).toFixed(2));}var t=el.querySelector('text');if(!t){t=document.createElementNS('http://www.w3.org/2000/svg','text');t.setAttribute('font-size','12');t.setAttribute('fill','#1a1a1a');t.setAttribute('pointer-events','none');if(r){t.setAttribute('y',String(parseFloat(r.getAttribute('y'))+parseFloat(r.getAttribute('height'))-6));}el.appendChild(t);}t.setAttribute('x',(nx+4).toFixed(2));t.textContent=gprofLabel(el.getAttribute('data-f'),nw);}}
 function gprofZoom(el){gprofRootX=parseFloat(el.getAttribute('data-x'));gprofRootW=parseFloat(el.getAttribute('data-w'));gprofApply();}
 function gprofReset(){var g=gprofGeom();gprofRootX=0;gprofRootW=g.plot;gprofApply();}
 function gprofSearch(q){q=(q||'').toLowerCase();var els=document.getElementsByClassName('f');for(var i=0;i<els.length;i++){var t=els[i].getAttribute('data-f').toLowerCase();els[i].setAttribute('opacity',(!q||t.indexOf(q)>=0)?'1':'0.12');}}
