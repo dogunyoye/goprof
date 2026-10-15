@@ -122,6 +122,9 @@ func RenderSVG(data *ProfileData, w io.Writer, opts SVGOptions) (frames int, err
 	fmt.Fprintf(&b, `<svg xmlns="http://www.w3.org/2000/svg" id="gprof-svg" data-w="%d" data-h="%d" data-pad="%s" data-plot="%s" width="%d" height="%d" viewBox="0 0 %d %d" font-family="monospace" role="img">`+"\n",
 		opts.Width, height, f2s(padL), f2s(plotW), opts.Width, height, opts.Width, height)
 	b.WriteString(`<rect x="0" y="0" width="100%" height="100%" fill="#ffffff" ondblclick="gprofReset()"/>` + "\n")
+	// Hover outline makes sub-pixel/narrow frames discoverable:
+	// they pop out under the cursor so tooltips stay reachable.
+	b.WriteString(`<style>.f rect{stroke:#fff;stroke-width:1}.f:hover rect{stroke:#000;stroke-width:1.2}</style>` + "\n")
 
 	title := opts.Title
 	if title == "" {
@@ -160,8 +163,12 @@ func RenderSVG(data *ProfileData, w io.Writer, opts SVGOptions) (frames int, err
 			fill := flameColor(c.name)
 			fmt.Fprintf(&b, `<g class="f" data-f="%s" data-x="%s" data-w="%s" opacity="1" style="cursor:pointer" onclick="gprofZoom(this)">`+"\n",
 				escAttr(c.name), f2s(x0), f2s(wpx))
+			// Floor the visible width at 2px so sub-pixel frames stay
+			// clickable/hoverable instead of shrinking to an invisible
+			// sliver. True widths live in data-x/data-w, so zoom math
+			// is unaffected; tiny frames may overlap a neighbour by ~1px.
 			fmt.Fprintf(&b, `<rect x="%s" y="%d" width="%s" height="%d" rx="2" fill="%s" stroke="#fff"/>`+"\n",
-				f2s(padL+x0), y, f2s(math.Max(wpx-1, 0.5)), rowH-2, fill)
+				f2s(padL+x0), y, f2s(math.Max(wpx-1, 2)), rowH-2, fill)
 			fmt.Fprintf(&b, `<title>%s</title>`+"\n", esc(tip))
 			// Always emit a <text> element (possibly empty) so the
 			// zoom handler can fill in the label once the frame
@@ -192,7 +199,7 @@ func RenderSVG(data *ProfileData, w io.Writer, opts SVGOptions) (frames int, err
 var gprofRootX=0,gprofRootW=0;
 function gprofGeom(){var s=document.getElementById('gprof-svg');return{pad:parseFloat(s.getAttribute('data-pad')),plot:parseFloat(s.getAttribute('data-plot'))};}
 function gprofLabel(name,w){if(w<=30)return '';var mc=Math.floor((w-8)/7);if(name.length<=mc)return name;return mc>4?name.substring(0,mc-1)+'…':'';}
-function gprofApply(){var g=gprofGeom();if(!gprofRootW)gprofRootW=g.plot;var k=g.plot/gprofRootW,els=document.getElementsByClassName('f');for(var i=0;i<els.length;i++){var el=els[i],ox=parseFloat(el.getAttribute('data-x')),ow=parseFloat(el.getAttribute('data-w')),nx=g.pad+(ox-gprofRootX)*k,nw=ow*k,vis=nx<g.pad+g.plot&&nx+nw>g.pad;el.style.display=vis?'':'none';if(!vis)continue;var r=el.querySelector('rect');if(r){r.setAttribute('x',nx.toFixed(2));r.setAttribute('width',Math.max(nw-1,0.5).toFixed(2));}var t=el.querySelector('text');if(!t){t=document.createElementNS('http://www.w3.org/2000/svg','text');t.setAttribute('font-size','12');t.setAttribute('fill','#1a1a1a');t.setAttribute('pointer-events','none');if(r){t.setAttribute('y',String(parseFloat(r.getAttribute('y'))+parseFloat(r.getAttribute('height'))-6));}el.appendChild(t);}t.setAttribute('x',(nx+4).toFixed(2));t.textContent=gprofLabel(el.getAttribute('data-f'),nw);}}
+function gprofApply(){var g=gprofGeom();if(!gprofRootW)gprofRootW=g.plot;var k=g.plot/gprofRootW,els=document.getElementsByClassName('f');for(var i=0;i<els.length;i++){var el=els[i],ox=parseFloat(el.getAttribute('data-x')),ow=parseFloat(el.getAttribute('data-w')),nx=g.pad+(ox-gprofRootX)*k,nw=ow*k,vis=nx<g.pad+g.plot&&nx+nw>g.pad;el.style.display=vis?'':'none';if(!vis)continue;var r=el.querySelector('rect');if(r){r.setAttribute('x',nx.toFixed(2));r.setAttribute('width',Math.max(nw-1,2).toFixed(2));}var t=el.querySelector('text');if(!t){t=document.createElementNS('http://www.w3.org/2000/svg','text');t.setAttribute('font-size','12');t.setAttribute('fill','#1a1a1a');t.setAttribute('pointer-events','none');if(r){t.setAttribute('y',String(parseFloat(r.getAttribute('y'))+parseFloat(r.getAttribute('height'))-6));}el.appendChild(t);}t.setAttribute('x',(nx+4).toFixed(2));t.textContent=gprofLabel(el.getAttribute('data-f'),nw);}}
 function gprofZoom(el){gprofRootX=parseFloat(el.getAttribute('data-x'));gprofRootW=parseFloat(el.getAttribute('data-w'));gprofApply();}
 function gprofReset(){var g=gprofGeom();gprofRootX=0;gprofRootW=g.plot;gprofApply();}
 function gprofSearch(q){q=(q||'').toLowerCase();var els=document.getElementsByClassName('f');for(var i=0;i<els.length;i++){var t=els[i].getAttribute('data-f').toLowerCase();els[i].setAttribute('opacity',(!q||t.indexOf(q)>=0)?'1':'0.12');}}

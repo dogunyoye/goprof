@@ -35,8 +35,8 @@ func renderTestSVG(t *testing.T) string {
 
 // TestZoomFramesCarryGeometry ensures every frame carries the original
 // coordinates the transform zoom needs (data-x/data-w), consistent with
-// its rect: rect.x == pad+data-x and rect.width == max(data-w-1, 0.5px
-// gutter floor). Zoom math replays from these, so they must agree.
+// its rect: rect.x == pad+data-x and rect.width == max(data-w-1, 2px
+// visibility floor). Zoom math replays from these, so they must agree.
 func TestZoomFramesCarryGeometry(t *testing.T) {
 	svg := renderTestSVG(t)
 	matches := frameGeomRe.FindAllStringSubmatch(svg, -1)
@@ -51,8 +51,8 @@ func TestZoomFramesCarryGeometry(t *testing.T) {
 			t.Errorf("rect x %v != pad+data-x %v", rx, pad+ox)
 		}
 		wantW := ow - 1
-		if wantW < 0.5 {
-			wantW = 0.5
+		if wantW < 2 {
+			wantW = 2
 		}
 		if rw != wantW {
 			t.Errorf("rect width %v != data-w %v - gutter", rw, ow)
