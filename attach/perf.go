@@ -281,12 +281,21 @@ func ScriptToFolded(perfDataPath, foldedPath string, wantPID int, includeKernel 
 	}
 
 	stacks := make([]flamegraph.Stack, 0, len(agg))
+	keys := make([]string, 0, len(agg))
 	for k, v := range agg {
 		stacks = append(stacks, flamegraph.Stack{Funcs: funcsOf[k], Value: int64(v)})
+		keys = append(keys, strings.Join(funcsOf[k], ";"))
 	}
-	sort.Slice(stacks, func(i, j int) bool {
-		return strings.Join(stacks[i].Funcs, ";") < strings.Join(stacks[j].Funcs, ";")
-	})
+	order := make([]int, len(stacks))
+	for i := range order {
+		order[i] = i
+	}
+	sort.Slice(order, func(a, b int) bool { return keys[order[a]] < keys[order[b]] })
+	sorted := make([]flamegraph.Stack, len(stacks))
+	for i, oi := range order {
+		sorted[i] = stacks[oi]
+	}
+	copy(stacks, sorted)
 	if err := os.MkdirAll(filepath.Dir(foldedPath), 0o755); err != nil {
 		return 0, fmt.Errorf("attach: mkdir folded: %w", err)
 	}
@@ -330,7 +339,7 @@ func parsePerfScript(r io.Reader, wantPID int, includeKernel bool, agg map[strin
 	}
 
 	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 1024*1024), 1024*1024)
+	sc.Buffer(make([]byte, 64*1024), 10*1024*1024)
 	var (
 		curPID    int
 		curLeaf   []string
@@ -343,7 +352,11 @@ func parsePerfScript(r io.Reader, wantPID int, includeKernel bool, agg map[strin
 			if inSample && haveEvent {
 				flush(curPID, curLeaf)
 			}
-			fmt.Sscan(m[1], &curPID)
+			if _, err := fmt.Sscan(m[1], &curPID); err != nil {
+				inSample, haveEvent = false, false
+				curLeaf = nil
+				continue
+			}
 			curLeaf = nil
 			inSample, haveEvent = true, true
 			continue
@@ -364,7 +377,7 @@ func parsePerfScript(r io.Reader, wantPID int, includeKernel bool, agg map[strin
 			continue
 		}
 		sym, dso := cleanSymbol(m[1]), m[2]
-		isKernel := strings.Contains(dso, "kernel")
+		isKernel := strings.HasPrefix(dso, "[kernel") || strings.Contains(dso, "vmlinux")
 		switch {
 		case isKernel && !includeKernel:
 			continue

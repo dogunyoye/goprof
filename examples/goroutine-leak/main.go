@@ -14,6 +14,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
 	"runtime"
 	"time"
 
@@ -25,6 +26,14 @@ func main() {
 	duration := flag.Duration("duration", 25*time.Second, "how long to leak")
 	pprofAddr := flag.String("pprof", "localhost:6064", "pprof endpoint (empty disables)")
 	flag.Parse()
+	if *rate <= 0 {
+		fmt.Fprintln(os.Stderr, "rate must be positive")
+		os.Exit(2)
+	}
+	if *duration <= 0 {
+		fmt.Fprintln(os.Stderr, "duration must be positive")
+		os.Exit(2)
+	}
 
 	fmt.Println("=== goprof example: goroutine-leak ===")
 	fmt.Println("what: leaks blocked goroutines holding 4KB each (the per-request worker bug)")

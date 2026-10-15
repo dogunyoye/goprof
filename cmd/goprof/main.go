@@ -134,17 +134,19 @@ func normalizeType(t string) string {
 	case "trace":
 		return collector.ProfileTrace
 	default:
-		fmt.Fprintf(os.Stderr, "unknown --type %q, using %q\n", t, t)
-		return t
+		fmt.Fprintf(os.Stderr, "collect: unknown --type %q (want cpu, heap, goroutine, block, mutex, trace)\n", t)
+		os.Exit(2)
+		return ""
 	}
 }
 
 func normalizeAddr(a string) string {
 	a = strings.TrimSpace(a)
-	if !strings.HasPrefix(a, "http://") && !strings.HasPrefix(a, "https://") {
+	lower := strings.ToLower(a)
+	if !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
 		a = "http://" + a
 	}
-	return strings.TrimSuffix(a, "/")
+	return strings.TrimRight(a, "/")
 }
 
 func runFlame(args []string) {
@@ -184,6 +186,14 @@ func runFlame(args []string) {
 		fs.Usage()
 		os.Exit(2)
 	}
+	if *width <= 0 || *rowHeight <= 0 {
+		fmt.Fprintln(os.Stderr, "flame: --width and --row-height must be positive")
+		os.Exit(2)
+	}
+	if *minWidth < 0 || *maxDepth < 0 {
+		fmt.Fprintln(os.Stderr, "flame: --min-width and --max-depth must not be negative")
+		os.Exit(2)
+	}
 
 	opts := flamegraph.DefaultOptions()
 	opts.Title = *title
@@ -195,25 +205,25 @@ func runFlame(args []string) {
 	opts.FoldedOutput = *folded
 	opts.HTMLOutput = *html
 
-	isFolded := strings.ToLower(strings.TrimSpace(*format))
-	switch isFolded {
-	case "folded":
-		isFolded = "folded"
-	case "pprof":
-		isFolded = "pprof"
-	default: // auto: folded by extension
-		isFolded = "pprof"
+	mode := strings.ToLower(strings.TrimSpace(*format))
+	switch mode {
+	case "folded", "pprof":
+	case "auto":
+		mode = "pprof"
 		lower := strings.ToLower(*input)
 		if strings.HasSuffix(lower, ".folded") || strings.HasSuffix(lower, ".fold") {
-			isFolded = "folded"
+			mode = "folded"
 		}
+	default:
+		fmt.Fprintf(os.Stderr, "flame: unknown --format %q (want auto, pprof, or folded)\n", *format)
+		os.Exit(2)
 	}
 
 	var (
 		s   flamegraph.Summary
 		err error
 	)
-	if isFolded == "folded" {
+	if mode == "folded" {
 		s, err = flamegraph.GenerateFromFolded(*input, *output, opts)
 	} else {
 		s, err = flamegraph.Generate(*input, *output, opts)
@@ -322,8 +332,23 @@ func targetDesc(pid int, name string) string {
 // stringSlice collects repeatable KEY=VAL style flags.
 type stringSlice []string
 
-func (e *stringSlice) String() string     { return strings.Join(*e, ",") }
-func (e *stringSlice) Set(v string) error { *e = append(*e, v); return nil }
+func (e *stringSlice) String() string { return strings.Join(*e, ",") }
+func (e *stringSlice) Set(v string) error {
+	if v == "" {
+		return fmt.Errorf("value required (want KEY=VAL)")
+	}
+	// --go-flag takes bare build flags; --env takes KEY=VAL.
+	if strings.HasPrefix(v, "-") {
+		*e = append(*e, v)
+		return nil
+	}
+	key, _, ok := strings.Cut(v, "=")
+	if !ok || strings.TrimSpace(key) == "" {
+		return fmt.Errorf("want KEY=VAL, got %q", v)
+	}
+	*e = append(*e, v)
+	return nil
+}
 
 func runRun(args []string) {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)

@@ -3,7 +3,6 @@ package flamegraph
 import (
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 
 	"github.com/google/pprof/profile"
@@ -28,6 +27,9 @@ type ProfileData struct {
 // aggregates samples into folded stacks using the given sample value index.
 // Pass sampleIndex < 0 to auto-select (see DefaultSampleIndex).
 func ParseStacks(inputPath string, sampleIndex int) (*ProfileData, error) {
+	if inputPath == "" {
+		return nil, fmt.Errorf("flamegraph: input path required")
+	}
 	f, err := os.Open(inputPath)
 	if err != nil {
 		return nil, fmt.Errorf("flamegraph: open %s: %w", inputPath, err)
@@ -39,18 +41,17 @@ func ParseStacks(inputPath string, sampleIndex int) (*ProfileData, error) {
 		return nil, fmt.Errorf("flamegraph: parse %s: %w (need a pprof profile, e.g. profiles/cpu.pb.gz)", inputPath, err)
 	}
 
+	if len(p.Sample) == 0 {
+		return nil, fmt.Errorf("flamegraph: profile %s has no samples", inputPath)
+	}
 	idx := sampleIndex
 	if idx < 0 {
 		idx = DefaultSampleIndex(p)
 	}
-	if idx < 0 || idx >= len(p.SampleType) || len(p.Sample) == 0 {
+	if len(p.SampleType) == 0 {
 		// Profiles without declared sample types (hand-built): use value 0.
-		if len(p.Sample) == 0 {
-			return nil, fmt.Errorf("flamegraph: profile %s has no samples", inputPath)
-		}
 		idx = 0
-	}
-	if len(p.SampleType) > 0 && (idx >= len(p.SampleType)) {
+	} else if idx < 0 || idx >= len(p.SampleType) {
 		return nil, fmt.Errorf("flamegraph: sample index %d out of range (profile has %d sample types)", idx, len(p.SampleType))
 	}
 	for _, s := range p.Sample {
@@ -92,9 +93,7 @@ func ParseStacks(inputPath string, sampleIndex int) (*ProfileData, error) {
 		stacks = append(stacks, Stack{Funcs: order[k], Value: v})
 		total += v
 	}
-	sort.Slice(stacks, func(i, j int) bool {
-		return strings.Join(stacks[i].Funcs, ";") < strings.Join(stacks[j].Funcs, ";")
-	})
+	sortStacks(stacks)
 
 	return &ProfileData{
 		Stacks:      stacks,

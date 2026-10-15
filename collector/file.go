@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // ProfileInfo describes a profile file on disk.
@@ -34,7 +35,7 @@ func List(dir string) ([]ProfileInfo, error) {
 		ext := filepath.Ext(name)
 		// Accept .pb.gz double extension plus common pprof suffixes,
 		// plus flamegraph outputs.
-		matched := ext == ".gz" || ext == ".prof" || ext == ".out" ||
+		matched := strings.HasSuffix(name, ".pb.gz") || ext == ".prof" || ext == ".out" ||
 			ext == ".pprof" || ext == ".svg" || ext == ".folded"
 		if !matched {
 			continue

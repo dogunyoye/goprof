@@ -83,33 +83,61 @@ func GenerateFromFolded(foldedPath, outputPath string, opts Options) (Summary, e
 	return renderData(foldedPath, data, outputPath, opts)
 }
 
+// writeFileAtomic writes path via a temp file + rename so a render
+// failure never leaves a truncated output behind.
+func writeFileAtomic(path string, write func(f *os.File) error) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("flamegraph: mkdir: %w", err)
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*.part")
+	if err != nil {
+		return fmt.Errorf("flamegraph: create %s: %w", path, err)
+	}
+	tmpName := tmp.Name()
+	// Best effort cleanup on failure; success renames tmp away.
+	failed := true
+	defer func() {
+		if failed {
+			_ = os.Remove(tmpName)
+		}
+	}()
+	if err := write(tmp); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("flamegraph: write %s: %w", path, err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return fmt.Errorf("flamegraph: write %s: %w", path, err)
+	}
+	failed = false
+	return nil
+}
+
 func renderData(inputPath string, data *ProfileData, outputPath string, opts Options) (Summary, error) {
 	var s Summary
 	if outputPath == "" {
 		return s, fmt.Errorf("flamegraph: output path required")
 	}
+	if opts.FoldedOutput == outputPath || opts.HTMLOutput == outputPath {
+		return s, fmt.Errorf("flamegraph: sidecar output must differ from svg output")
+	}
 
-	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
-		return s, fmt.Errorf("flamegraph: mkdir: %w", err)
-	}
-	out, err := os.Create(outputPath)
-	if err != nil {
-		return s, fmt.Errorf("flamegraph: create %s: %w", outputPath, err)
-	}
-	frames, err := RenderSVG(data, out, SVGOptions{
-		Title:         opts.Title,
-		Width:         opts.Width,
-		RowHeight:     opts.RowHeight,
-		MinWidth:      opts.MinWidth,
-		MaxDepth:      opts.MaxDepth,
-		EmbedControls: true,
-	})
-	closeErr := out.Close()
-	if err != nil {
+	var frames int
+	if err := writeFileAtomic(outputPath, func(out *os.File) error {
+		var err error
+		frames, err = RenderSVG(data, out, SVGOptions{
+			Title:         opts.Title,
+			Width:         opts.Width,
+			RowHeight:     opts.RowHeight,
+			MinWidth:      opts.MinWidth,
+			MaxDepth:      opts.MaxDepth,
+			EmbedControls: true,
+		})
+		return err
+	}); err != nil {
 		return s, err
-	}
-	if closeErr != nil {
-		return s, fmt.Errorf("flamegraph: write %s: %w", outputPath, closeErr)
 	}
 
 	s = Summary{
@@ -123,45 +151,26 @@ func renderData(inputPath string, data *ProfileData, outputPath string, opts Opt
 	}
 
 	if opts.FoldedOutput != "" {
-		if err := os.MkdirAll(filepath.Dir(opts.FoldedOutput), 0o755); err != nil {
-			return s, fmt.Errorf("flamegraph: mkdir folded: %w", err)
-		}
-		ff, err := os.Create(opts.FoldedOutput)
-		if err != nil {
-			return s, fmt.Errorf("flamegraph: create %s: %w", opts.FoldedOutput, err)
-		}
-		err = WriteFolded(data.Stacks, ff)
-		closeErr := ff.Close()
-		if err != nil {
+		if err := writeFileAtomic(opts.FoldedOutput, func(ff *os.File) error {
+			return WriteFolded(data.Stacks, ff)
+		}); err != nil {
 			return s, err
-		}
-		if closeErr != nil {
-			return s, fmt.Errorf("flamegraph: write %s: %w", opts.FoldedOutput, closeErr)
 		}
 		s.Folded = opts.FoldedOutput
 	}
 
 	if opts.HTMLOutput != "" {
-		if err := os.MkdirAll(filepath.Dir(opts.HTMLOutput), 0o755); err != nil {
-			return s, fmt.Errorf("flamegraph: mkdir html: %w", err)
-		}
-		hf, err := os.Create(opts.HTMLOutput)
-		if err != nil {
-			return s, fmt.Errorf("flamegraph: create %s: %w", opts.HTMLOutput, err)
-		}
-		_, err = RenderHTML(data, hf, SVGOptions{
-			Title:     opts.Title,
-			Width:     opts.Width,
-			RowHeight: opts.RowHeight,
-			MinWidth:  opts.MinWidth,
-			MaxDepth:  opts.MaxDepth,
-		})
-		closeErr := hf.Close()
-		if err != nil {
+		if err := writeFileAtomic(opts.HTMLOutput, func(hf *os.File) error {
+			_, err := RenderHTML(data, hf, SVGOptions{
+				Title:     opts.Title,
+				Width:     opts.Width,
+				RowHeight: opts.RowHeight,
+				MinWidth:  opts.MinWidth,
+				MaxDepth:  opts.MaxDepth,
+			})
+			return err
+		}); err != nil {
 			return s, err
-		}
-		if closeErr != nil {
-			return s, fmt.Errorf("flamegraph: write %s: %w", opts.HTMLOutput, closeErr)
 		}
 		s.HTML = opts.HTMLOutput
 	}

@@ -4,7 +4,7 @@ vet:
 	go vet ./...
 
 test:
-	go test ./... -count=1 -v
+	go test -race ./... -count=1 -v
 
 build:
 	go build -o /tmp/goprof ./cmd/goprof
