@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"goprof/internal/atomicfile"
 )
 
 // Options controls Generate. Use DefaultOptions for sane v1 defaults.
@@ -86,33 +88,34 @@ func GenerateFromFolded(foldedPath, outputPath string, opts Options) (Summary, e
 // writeFileAtomic writes path via a temp file + rename so a render
 // failure never leaves a truncated output behind.
 func writeFileAtomic(path string, write func(f *os.File) error) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("flamegraph: mkdir: %w", err)
+	var writeErr error
+	err := atomicfile.Write(path, func(f *os.File) error {
+		writeErr = write(f)
+		return writeErr
+	})
+	if err != nil && writeErr == nil {
+		// Only the helper's own errors need our prefix; render errors
+		// already carry one.
+		return fmt.Errorf("flamegraph: %w", err)
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*.part")
-	if err != nil {
-		return fmt.Errorf("flamegraph: create %s: %w", path, err)
+	return err
+}
+
+// samePath reports whether a and b name the same file, catching
+// spellings like "out.svg" vs "./out.svg" and, for existing files,
+// symlinks or case-insensitive filesystems.
+func samePath(a, b string) bool {
+	if a == "" || b == "" {
+		return false
 	}
-	tmpName := tmp.Name()
-	// Best effort cleanup on failure; success renames tmp away.
-	failed := true
-	defer func() {
-		if failed {
-			_ = os.Remove(tmpName)
-		}
-	}()
-	if err := write(tmp); err != nil {
-		_ = tmp.Close()
-		return err
+	absA, errA := filepath.Abs(a)
+	absB, errB := filepath.Abs(b)
+	if errA == nil && errB == nil && absA == absB {
+		return true
 	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("flamegraph: write %s: %w", path, err)
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		return fmt.Errorf("flamegraph: write %s: %w", path, err)
-	}
-	failed = false
-	return nil
+	fa, errA := os.Stat(a)
+	fb, errB := os.Stat(b)
+	return errA == nil && errB == nil && os.SameFile(fa, fb)
 }
 
 func renderData(inputPath string, data *ProfileData, outputPath string, opts Options) (Summary, error) {
@@ -120,8 +123,11 @@ func renderData(inputPath string, data *ProfileData, outputPath string, opts Opt
 	if outputPath == "" {
 		return s, fmt.Errorf("flamegraph: output path required")
 	}
-	if opts.FoldedOutput == outputPath || opts.HTMLOutput == outputPath {
+	if samePath(opts.FoldedOutput, outputPath) || samePath(opts.HTMLOutput, outputPath) {
 		return s, fmt.Errorf("flamegraph: sidecar output must differ from svg output")
+	}
+	if samePath(opts.FoldedOutput, opts.HTMLOutput) {
+		return s, fmt.Errorf("flamegraph: --folded and --html outputs must differ")
 	}
 
 	var frames int

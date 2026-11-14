@@ -254,3 +254,24 @@ func TestGenerateFromFolded(t *testing.T) {
 		t.Fatal("expected svg output")
 	}
 }
+
+func TestSidecarCollisions(t *testing.T) {
+	dir := t.TempDir()
+	in := filepath.Join(dir, "in.folded")
+	if err := os.WriteFile(in, []byte("a;b 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svg := filepath.Join(dir, "out.svg")
+	cases := []struct{ folded, html string }{
+		{folded: filepath.Join(dir, ".", "out.svg")},
+		{html: filepath.Join(dir, "sub", "..", "out.svg")},
+		{folded: filepath.Join(dir, "x.txt"), html: filepath.Join(dir, ".", "x.txt")},
+	}
+	for _, c := range cases {
+		opts := DefaultOptions()
+		opts.FoldedOutput, opts.HTMLOutput = c.folded, c.html
+		if _, err := GenerateFromFolded(in, svg, opts); err == nil {
+			t.Errorf("folded=%q html=%q: expected collision error", c.folded, c.html)
+		}
+	}
+}
