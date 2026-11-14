@@ -324,24 +324,30 @@ func targetDesc(pid int, name string) string {
 	return fmt.Sprintf("process matching %q", name)
 }
 
-// stringSlice collects repeatable KEY=VAL style flags.
-type stringSlice []string
+// envSlice collects repeatable KEY=VAL flags (--env/-e).
+type envSlice []string
 
-func (e *stringSlice) String() string { return strings.Join(*e, ",") }
-func (e *stringSlice) Set(v string) error {
-	if v == "" {
-		return fmt.Errorf("value required (want KEY=VAL)")
-	}
-	// --go-flag takes bare build flags; --env takes KEY=VAL.
-	if strings.HasPrefix(v, "-") {
-		*e = append(*e, v)
-		return nil
-	}
+func (e *envSlice) String() string { return strings.Join(*e, ",") }
+func (e *envSlice) Set(v string) error {
 	key, _, ok := strings.Cut(v, "=")
-	if !ok || strings.TrimSpace(key) == "" {
+	if !ok || strings.TrimSpace(key) == "" || strings.HasPrefix(key, "-") {
 		return fmt.Errorf("want KEY=VAL, got %q", v)
 	}
 	*e = append(*e, v)
+	return nil
+}
+
+// goFlagSlice collects repeatable go build arguments (--go-flag). Values
+// are passed through verbatim, so a flag's argument can be given as its
+// own --go-flag (e.g. --go-flag -tags --go-flag integration).
+type goFlagSlice []string
+
+func (g *goFlagSlice) String() string { return strings.Join(*g, " ") }
+func (g *goFlagSlice) Set(v string) error {
+	if strings.TrimSpace(v) == "" {
+		return fmt.Errorf("value required (e.g. -race)")
+	}
+	*g = append(*g, v)
 	return nil
 }
 
@@ -364,10 +370,10 @@ func runRun(args []string) {
 	title := fs.String("title", "", "SVG title override")
 	width := fs.Int("width", 1200, "SVG canvas width in px")
 	dir := fs.String("dir", "", "working directory for the app")
-	var envs stringSlice
+	var envs envSlice
 	fs.Var(&envs, "env", "extra child env (KEY=VAL, repeatable)")
 	fs.Var(&envs, "e", "shorthand for --env")
-	var goFlags stringSlice
+	var goFlags goFlagSlice
 	fs.Var(&goFlags, "go-flag", "go build flag for .go/package targets, repeatable (e.g. --go-flag -race)")
 	_ = fs.Parse(args)
 

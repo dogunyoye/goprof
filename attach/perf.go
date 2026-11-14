@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -281,21 +280,10 @@ func ScriptToFolded(perfDataPath, foldedPath string, wantPID int, includeKernel 
 	}
 
 	stacks := make([]flamegraph.Stack, 0, len(agg))
-	keys := make([]string, 0, len(agg))
 	for k, v := range agg {
 		stacks = append(stacks, flamegraph.Stack{Funcs: funcsOf[k], Value: int64(v)})
-		keys = append(keys, strings.Join(funcsOf[k], ";"))
 	}
-	order := make([]int, len(stacks))
-	for i := range order {
-		order[i] = i
-	}
-	sort.Slice(order, func(a, b int) bool { return keys[order[a]] < keys[order[b]] })
-	sorted := make([]flamegraph.Stack, len(stacks))
-	for i, oi := range order {
-		sorted[i] = stacks[oi]
-	}
-	copy(stacks, sorted)
+	flamegraph.SortStacks(stacks)
 	if err := os.MkdirAll(filepath.Dir(foldedPath), 0o755); err != nil {
 		return 0, fmt.Errorf("attach: mkdir folded: %w", err)
 	}

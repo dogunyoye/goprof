@@ -29,9 +29,9 @@ func WriteFolded(stacks []Stack, w io.Writer) error {
 	return nil
 }
 
-// sortStacks orders stacks deterministically by their joined frames,
+// SortStacks orders stacks deterministically by their joined frames,
 // precomputing keys once instead of re-joining on every comparison.
-func sortStacks(stacks []Stack) {
+func SortStacks(stacks []Stack) {
 	keys := make([]string, len(stacks))
 	for i := range stacks {
 		keys[i] = strings.Join(stacks[i].Funcs, ";")
@@ -107,7 +107,7 @@ func ParseFolded(inputPath string) (*ProfileData, error) {
 	for k, v := range agg {
 		stacks = append(stacks, Stack{Funcs: funcsOf[k], Value: v})
 	}
-	sortStacks(stacks)
+	SortStacks(stacks)
 	return &ProfileData{
 		Stacks:      stacks,
 		Total:       total,

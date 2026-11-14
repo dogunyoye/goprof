@@ -93,7 +93,7 @@ func ParseStacks(inputPath string, sampleIndex int) (*ProfileData, error) {
 		stacks = append(stacks, Stack{Funcs: order[k], Value: v})
 		total += v
 	}
-	sortStacks(stacks)
+	SortStacks(stacks)
 
 	return &ProfileData{
 		Stacks:      stacks,
