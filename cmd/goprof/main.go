@@ -88,7 +88,11 @@ func runCollect(args []string) {
 		fmt.Fprintln(os.Stderr, "collect: --output is required")
 		os.Exit(2)
 	}
-	addrNorm := normalizeAddr(*addr)
+	addrNorm, err := collector.NormalizeAddr(*addr)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "collect:", err)
+		os.Exit(2)
+	}
 
 	fmt.Printf("collecting %s from %s -> %s\n", profileType, addrNorm, *output)
 	if err := collector.FetchRemote(addrNorm, profileType, *seconds, *output); err != nil {
@@ -138,15 +142,6 @@ func normalizeType(t string) string {
 		os.Exit(2)
 		return ""
 	}
-}
-
-func normalizeAddr(a string) string {
-	a = strings.TrimSpace(a)
-	lower := strings.ToLower(a)
-	if !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
-		a = "http://" + a
-	}
-	return strings.TrimRight(a, "/")
 }
 
 func runFlame(args []string) {

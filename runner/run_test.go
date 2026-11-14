@@ -204,15 +204,6 @@ func TestExitCodeMapping(t *testing.T) {
 	}
 }
 
-func TestNormalizePprofAddr(t *testing.T) {
-	if got := normalizePprofAddr("localhost:6060"); got != "http://localhost:6060" {
-		t.Fatalf("got %q", got)
-	}
-	if got := normalizePprofAddr("http://x:1/"); got != "http://x:1" {
-		t.Fatalf("got %q", got)
-	}
-}
-
 func TestWaitPprofReadyTimeout(t *testing.T) {
 	// Nothing listens here; must time out, not hang.
 	if err := waitPprofReady("http://127.0.0.1:1", 500*time.Millisecond); err == nil {

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"goprof/collector"
@@ -22,7 +21,11 @@ type pprofResult struct {
 // flamegraphs. A child that exits mid-fetch keeps whatever completed.
 func fetchEndpoint(addr string, wait time.Duration, cpuSeconds int, workDir string, fopts flamegraph.Options, title string) pprofResult {
 	var r pprofResult
-	base := normalizePprofAddr(addr)
+	base, err := collector.NormalizeAddr(addr)
+	if err != nil {
+		r.err = err
+		return r
+	}
 	if err := waitPprofReady(base, wait); err != nil {
 		r.err = err
 		return r
@@ -91,12 +94,4 @@ func waitPprofReady(base string, timeout time.Duration) error {
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-}
-
-func normalizePprofAddr(a string) string {
-	a = strings.TrimSpace(a)
-	if !strings.HasPrefix(a, "http://") && !strings.HasPrefix(a, "https://") {
-		a = "http://" + a
-	}
-	return strings.TrimSuffix(a, "/")
 }
